@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}Deals{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-tag"></i> Deals</h1>
+  <a href="{% url 'deal_create' %}" class="btn">
+    <i class="fa fa-plus"></i> New Deal
+  </a>
+</div>
+
+<form id="search-form" class="search-bar" action="" method="get">
+  <input name="q" placeholder="Search deals..." value="{{ request.GET.q|default:'' }}">
+  <button type="submit"><i class="fa fa-search"></i></button>
+</form>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Image</th>
+      <th>Name</th>
+      <th>Price</th>
+      <th>Available</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for deal in deals %}
+    <tr id="deal-{{ deal.pk }}">
+      <td>
+        {% if deal.image %}
+          <img src="{{ deal.image.url }}" width="50">
+        {% else %}
+          <i class="fa fa-tag fa-2x"></i>
+        {% endif %}
+      </td>
+      <td>{{ deal.name }}</td>
+      <td>{{ deal.price }}</td>
+      <td>{{ deal.is_available|yesno:'Yes,No' }}</td>
+      <td>
+        <a href="{% url 'deal_detail' deal.pk %}"><i class="fa fa-eye"></i></a>
+        <a href="{% url 'deal_edit' deal.pk %}" class="btn-edit"><i class="fa fa-edit"></i></a>
+        <button class="btn-delete" data-url="{% url 'deal_delete' deal.pk %}">
+          <i class="fa fa-trash"></i>
+        </button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="5">No deals found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+function getCookie(name) {
+  let v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)') 
+  return v ? v.pop() : ''
+}
+$.ajaxSetup({
+  headers: { 'X-CSRFToken': getCookie('csrftoken') }
+});
+
+$('.btn-delete').click(function() {
+  let url = $(this).data('url'),
+      row = '#deal-' + url.split('/').slice(-2)[0]
+  if (confirm('Delete this deal?')) {
+    $.post(url, {}, () => {
+      showAlert('success', 'Deal deleted')
+      $(row).remove()
+    })
+  }
+})
+</script>
+{% endblock %}

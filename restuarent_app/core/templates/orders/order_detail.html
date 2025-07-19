@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block title %}Order #{{ order.number }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-receipt"></i> Order #{{ order.number }}</h1>
+  <a href="{% url 'order_list' %}" class="btn"><i class="fa fa-arrow-left"></i> Back to Orders</a>
+  <a href="{% url 'order_print_token' order.pk %}" target="_blank" class="btn">
+    <i class="fa fa-print"></i> Print Token
+  </a>
+  <a href="{% url 'order_print_bill' order.pk %}" target="_blank" class="btn">
+    <i class="fa fa-print"></i> Print Bill
+  </a>
+</div>
+
+<div class="detail-container">
+  <p><strong>Date/Time:</strong> {{ order.created_at|date:"Y-m-d H:i" }}</p>
+  <p><strong>Table:</strong> {{ order.table.number if order.table else '–' }}</p>
+  <p><strong>Status:</strong> {{ order.get_status_display }}</p>
+  <p><strong>Token #:</strong> {{ order.token_number }}</p>
+
+  <h3><i class="fa fa-list"></i> Items:</h3>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Item / Deal</th>
+        <th>Qty</th>
+        <th>Unit Price</th>
+        <th>Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for oi in order.items.all %}
+      <tr>
+        <td>{{ forloop.counter }}</td>
+        {% if oi.menu_item %}
+          <td>{{ oi.menu_item.name }}</td>
+        {% else %}
+          <td>{{ oi.deal.name }} (Deal)</td>
+        {% endif %}
+        <td>{{ oi.quantity }}</td>
+        <td>{{ oi.unit_price }}</td>
+        <td>{{ oi.line_total|floatformat:2 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    {% with subtotal=0 %}
+      {% for oi in order.items.all %}{% with subtotal=subtotal|add:oi.line_total %}{% endwith %}{% endfor %}
+      <div><span>Subtotal:</span> <span>{{ subtotal|floatformat:2 }}</span></div>
+      <div><span>Discount:</span> <span>{{ order.discount|floatformat:2 }}</span></div>
+      {% with after_disc=subtotal|floatformat:2|floatformat:"-"|add:order.discount %}
+      <div><span>Tax ( {{ order.tax_percentage }}% ):</span> <span>{{ (after_disc * order.tax_percentage / 100)|floatformat:2 }}</span></div>
+      <div><span>Service Charge:</span> <span>{{ order.service_charge|floatformat:2 }}</span></div>
+      {% with grand=((after_disc)+(after_disc*order.tax_percentage/100)+order.service_charge) %}
+      <div><strong>Grand Total:</strong> <strong>{{ grand|floatformat:2 }}</strong></div>
+      {% endwith %}
+      {% endwith %}
+    {% endwith %}
+  </div>
+
+  {% if order.payment %}
+    <h3><i class="fa fa-money-check"></i> Payment:</h3>
+    <p><strong>Method:</strong> {{ order.payment.get_method_display }}</p>
+    <p><strong>Paid Amount:</strong> {{ order.payment.amount }}</p>
+  {% endif %}
+</div>
+{% endblock %}

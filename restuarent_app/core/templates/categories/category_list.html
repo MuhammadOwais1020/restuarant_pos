@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+  <h1>Categories</h1>
+  <a href="{% url 'category_create' %}" class="btn"><i class="fa fa-plus"></i> New Category</a>
+</div>
+<form id="search-form" class="search-bar">
+  <input name="q" placeholder="Search..." value="{{ request.GET.q }}">
+  <button type="submit"><i class="fa fa-search"></i></button>
+</form>
+<table class="table">
+  <thead><tr><th>Name</th><th>Description</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for cat in categories %}
+    <tr id="cat-{{ cat.pk }}">
+      <td>{{ cat.name }}</td>
+      <td>{{ cat.description }}</td>
+      <td>
+        <a href="{% url 'category_edit' cat.pk %}" class="btn-edit"><i class="fa fa-edit"></i></a>
+        <button class="btn-delete" data-url="{% url 'category_delete' cat.pk %}"><i class="fa fa-trash"></i></button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="3">No categories.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<script>
+function getCookie(n){let v=document.cookie.match('(^|;)\s*'+n+'=([^;]+)');return v?v.pop():'');}
+$.ajaxSetup({headers:{'X-CSRFToken':getCookie('csrftoken')}});
+$('.btn-delete').click(function(){
+  let url=$(this).data('url'), row='#cat-'+url.split('/').slice(-2)[0];
+  if(confirm('Delete?')){
+    $.post(url, {}, ()=>{showAlert('success','Deleted');$(row).remove();});
+  }
+});
+</script>
+{% endblock %}

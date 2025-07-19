@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if view.object %}
+  <h1>Edit Menu Item</h1>
+{% else %}
+  <h1>New Menu Item</h1>
+{% endif %}
+<form id="item-form" method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <div class="image-preview-container">
+  <img id="image-preview" alt="Image preview">
+</div>
+  <button type="submit" class="btn-submit">Save Item</button>
+</form>
+<script>
+$('#item-form').submit(function(e){
+  e.preventDefault();
+  let fd=new FormData(this);
+  $.ajax({url:window.location.href,method:'POST',data:fd,processData:false,contentType:false,
+    success:()=>{showAlert('success','Saved'); setTimeout(()=>window.location.href="{% url 'menuitem_list' %}",500);},
+    error:()=>{showAlert('error','Failed');}
+  });
+});
+
+$('#id_image').on('change', function(){
+  const file = this.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  $('#image-preview')
+    .attr('src', url)
+    .addClass('show');
+});
+
+</script>
+{% endblock %}

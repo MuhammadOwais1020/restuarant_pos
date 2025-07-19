@@ -1,0 +1,1327 @@
+{# core/templates/orders/order_form.html #} {% extends 'base.html' %} {% block title %} {% if order %} Edit Order #{{ order.number }} {% else %} New Order {% endif %} {% endblock %} {% block extra_head %}
+<style>
+  /* --------------------------------------------------------------
+     Order Filling Page Styles (order_form.html)
+     -------------------------------------------------------------- */
+
+  :root {
+    --color-primary: #ff5722;
+    --color-primary-dark: #e64a19;
+    --color-bg: #f4f7fa;
+    --color-text: #333;
+    --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.1);
+    --radius-sm: 4px;
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 60px; /* must match the 60px header in base.html */
+    --color-order-bg: #fffb80;
+  }
+
+  /* Reset & Base */
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    width: 100%;
+    height: 100%;
+    font-family: "Segoe UI", sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+    overflow: hidden; /* Prevent scrolling of the entire page */
+  }
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+  }
+
+  /* Container: splits LEFT & RIGHT */
+  .order-container {
+    display: flex;
+    height: calc(100vh - var(--space-xl)); /* fill everything below the 60px header */
+    overflow: hidden;
+  }
+
+  /* -------------------------------------------------------------
+     LEFT PANE: Order Details (+ Items Table + Totals)
+     ------------------------------------------------------------- */
+  .order-left {
+    width: 50%;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid #e0e0e0;
+    overflow: hidden; /* only inner scrolling */
+    height: calc(100dvh - 62px);
+  }
+
+  /* Order Header (Order #, DateTime, Token) */
+  .order-header {
+    padding: var(--space-md);
+    border-bottom: 1px solid #e0e0e0;
+    flex: none; /* stays fixed at top */
+  }
+  .order-header h2 {
+    font-size: 1.5rem;
+    margin-bottom: var(--space-xs);
+  }
+  .order-header span {
+    display: block;
+    font-size: 0.9rem;
+    color: #666;
+    margin-top: var(--space-xs);
+  }
+
+  /* Scrollable Items Table */
+  .order-items-table {
+    flex: 1; /* take up all remaining space */
+    overflow-y: auto;
+  }
+  .order-items-table table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .order-items-table th,
+  .order-items-table td {
+    padding: var(--space-xs) var(--space-md);
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    font-size: 0.9rem;
+  }
+  .order-items-table th {
+    background: var(--color-bg);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .order-items-table img {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+  }
+  .order-items-table input[type="number"] {
+    width: 60px;
+    padding: var(--space-xs);
+    font-size: 0.9rem;
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm);
+  }
+  .btn-remove-item {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+  }
+  .btn-remove-item:hover {
+    color: #e74c3c;
+  }
+
+  /* Totals Section (fixed height, not scrollable) */
+  .totals {
+    padding: var(--space-md);
+    background: #d4ffd6;
+    border-top: 1px solid #e0e0e0;
+    flex: none; /* stays visible above the action buttons */
+  }
+  .totals .totals-items {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--space-xs);
+    font-size: 0.95rem;
+    gap: 10px;
+    align-items: center;
+  }
+  .totals > .totals-items:first-child {
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 10px;
+  }
+  .totals > .totals-items:last-child {
+    border-top: 1px solid #ccc;
+    padding-top: 10px;
+  }
+  .totals input[type="number"] {
+    width: 80px;
+    padding: var(--space-xs);
+    font-size: 0.9rem;
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm);
+  }
+
+  /* -------------------------------------------------------------
+     RIGHT PANE: Search + Categories + Items (80%) & Action Buttons (20%)
+     ------------------------------------------------------------- */
+  .order-right {
+    width: 50%;
+    background: var(--color-bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* only inner scroll */
+    justify-content: space-between;
+    height: calc(100dvh - 62px);
+  }
+
+  /* === TOP 80% of right pane: “search + categories + items” === */
+  .right-main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Search Bar (always visible at very top of right pane) */
+  .search-bar-order {
+    display: flex;
+    padding: var(--space-md);
+    background: var(--color-order-bg);
+    box-shadow: var(--shadow-sm);
+    flex: none;
+    padding-bottom: var(--space-xs);
+  }
+  .search-bar-order input[type="text"] {
+    flex: 1;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    font-size: 0.9rem;
+  }
+  .search-bar-order button {
+    background: var(--color-primary);
+    border: none;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    padding: var(--space-sm) var(--space-lg);
+    color: #fff;
+    transition: background 0.3s;
+  }
+  .search-bar-order button:hover {
+    background: var(--color-primary-dark);
+  }
+
+  /* Categories Row (horizontal scroll, second row in right pane) */
+  .categories-row {
+    display: flex;
+    padding: var(--space-md);
+    background: var(--color-order-bg);
+    border-bottom: 1px solid #e0e0e0;
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 14px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 9;
+  }
+  .category-card {
+    flex: 0 0 auto;
+    padding-inline: 10px;
+    height: 80px;
+    background: #fff;
+    border-radius: var(--radius-sm);
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #ccc;
+  }
+  .category-card:hover {
+    transform: translateY(-4px);
+  }
+  .category-card.selected {
+    border: 2px solid var(--color-primary);
+  }
+  .category-card img {
+    object-fit: contain;
+  }
+  .category-card img,
+  .category-card i {
+    font-size: 2rem;
+    margin-bottom: var(--space-xs);
+    width: 70px;
+    object-fit: contain;
+    height: 40px;
+  }
+  .category-card i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .category-card span {
+    font-size: 14px;
+    color: var(--color-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: bold;
+  }
+
+  /* Menu Items Grid (fills the rest of “right-main,” scrollable) */
+  .menu-items-grid {
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: var(--space-md);
+    padding: var(--space-md);
+    background: var(--color-bg);
+  }
+  .item-card,
+  .deal-card {
+    background: #fff;
+    border-radius: var(--radius-sm);
+    text-align: center;
+    padding: var(--space-xs);
+    cursor: pointer;
+    transition: transform 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-block: 10px;
+    border: 1px solid #000;
+  }
+  .item-card:hover,
+  .deal-card:hover {
+    transform: translateY(-4px);
+  }
+  .item-card img,
+  .deal-card img {
+    width: 70px;
+    height: 70px;
+    object-fit: contain;
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-xs);
+  }
+  .item-card i,
+  .deal-card i {
+    font-size: 2rem;
+    margin-bottom: var(--space-xs);
+    height: 70px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .item-card span,
+  .deal-card span {
+    font-size: 1rem;
+    color: var(--color-text);
+    text-align: center;
+    margin-top: var(--space-xs);
+    font-weight: 700;
+  }
+
+  /* (Optional) If you ever want a “Deals”‐only section below, you’d put it similarly:
+     .deals-section { … } and .deal-card { … } 
+     but it’s not strictly needed for the 80/20 layout. 
+  */
+
+  /* === BOTTOM 20% of right pane: “action buttons” === */
+  .right-actions {
+    flex: 0 0 20%;
+    background: var(--color-bg);
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+  }
+  .right-actions .btn-action {
+    flex: 1;
+    margin: 0 var(--space-xs);
+    padding: var(--space-sm);
+    padding-block: 18px;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: #fff;
+    font-size: 20px;
+    display: inline-flex;
+    align-items: flex-end;
+    justify-content: center;
+    transition: background 0.3s;
+    height: 70%;
+  }
+  .btn-reset {
+    background: #e74c3c;
+  }
+  .btn-reset:hover {
+    background: #c0392b;
+  }
+  .btn-create {
+    background: var(--color-primary);
+  }
+  .btn-create:hover {
+    background: var(--color-primary-dark);
+  }
+  .btn-new {
+    background: #3498db;
+  }
+  .btn-new:hover {
+    background: #2980b9;
+  }
+  .btn-paid {
+    background: #27ae60;
+  }
+  .btn-paid:hover {
+    background: #229954;
+  }
+  .right-actions .btn-action i {
+    margin-right: var(--space-xs);
+  }
+
+  /* (Optional) Hide the “big header” if you want: */
+  .order-header {
+    display: none;
+  }
+  header.topbar {
+    display: none;
+  }
+
+  /* Hide scrollbars in WebKit (optional) */
+  .order-left::-webkit-scrollbar,
+  .menu-items-grid::-webkit-scrollbar,
+  .categories-row::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .order-left::-webkit-scrollbar-thumb,
+  .menu-items-grid::-webkit-scrollbar-thumb,
+  .categories-row::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: var(--radius-sm);
+  }
+
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    margin: 0 10px;
+  }
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+  }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 24px;
+  }
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+  input:checked + .slider {
+    background-color: #4caf50;
+  }
+  input:checked + .slider:before {
+    transform: translateX(26px);
+  }
+  /* Hover effect */
+  .switch:hover .slider {
+    opacity: 0.9;
+  }
+
+  .table-selector {
+    padding: var(--space-md);
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .tables-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: var(--space-xs);
+  }
+  .table-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--space-sm);
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm);
+    background: #f9f9f9;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .table-btn i {
+    margin-bottom: var(--space-xs);
+  }
+  .table-btn.selected {
+    border-color: var(--color-primary);
+    background: #fff0eb;
+  }
+  .table-btn .status {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border-radius: 2px;
+  }
+
+  .table-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--space-sm);
+    background: #f4f4f4;
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm);
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  /* ─── Occupied (“active”) tables get a green-tint & border ───────── */
+  .table-btn.active {
+    background: #e8f5e9; /* light green background */
+    border-color: #4caf50; /* green border */
+  }
+
+  /* ─── Status badge on active tables ───────────────────────────────── */
+  .table-btn .status {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #4caf50; /* same green */
+    color: white;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* ─── “Selected” table (the one you’re currently editing) ─────────── */
+  .table-btn.selected {
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+
+  /* ─── Ensure statuses don’t clash ─────────────────────────────────── */
+  .table-btn.active.selected {
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+  .toggle-switch-container {
+    display: flex;
+    padding: 10px;
+  }
+  .toggle-actions {
+    display: flex;
+    align-items: center;
+  }
+  .right-bottom-actions {
+    margin-bottom: 10px;
+  }
+  .totals-calculations {
+    display: flex;
+    align-items: center;
+    gap: 5%;
+    justify-content: flex-end;
+    padding-block: 10px;
+  }
+</style>
+{% endblock %} {% block content %}
+<div class="order-container">
+  <!-- ===== LEFT PANE: Order Details ===== -->
+  <div class="order-left">
+    <!-- Order Header -->
+    <div class="order-header">
+      {% if order %}
+      <h2><i class="fa fa-receipt"></i> Edit Order #{{ order.number }}</h2>
+      {% else %}
+      <h2><i class="fa fa-plus"></i> New Order</h2>
+      {% endif %}
+      <span> Date: {% if order %} {{ order.created_at|date:"Y-m-d H:i" }} {% else %} {{ now|date:"Y-m-d H:i" }} {% endif %} </span>
+      <span> Token #: {% if order and order.token_number %} {{ order.token_number }} {% else %} &mdash; {% endif %} </span>
+    </div>
+    <div class="table-selector">
+      <h3 id="table-heading">Walk-in Customer</h3>
+      <div class="tables-grid">
+        {% for table in tables %}
+        <button class="table-btn {% if table.has_items %} active{% endif %} {% if order and order.table_id == table.id %} selected{% endif %}" data-table-id="{{ table.id }}">
+          <i class="fa fa-chair fa-2x"></i>
+          <span>Table {{ table.number }}</span>
+
+          {% if table.has_items %}
+          <span class="status">₨{{ table.current_order_total }}</span>
+          {% endif %}
+        </button>
+        {% endfor %}
+
+        <button class="table-btn{% if not order or not order.table %} selected{% endif %}" data-table-id="">
+          <i class="fa fa-user fa-2x"></i>
+          <span>Walk-in</span>
+        </button>
+      </div>
+    </div>
+    <!-- Order Items Table (scrollable) -->
+    <div class="order-items-table">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item / Deal</th>
+            <th>Qty</th>
+            <th>Unit Price</th>
+            <th>Amount</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="order-items-body">
+          {# JS will insert
+          <tr data-index="…">
+            here #}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Totals (always visible, below the table) -->
+    <div class="totals">
+      <div class="totals-items">
+        <strong>Subtotal:</strong>
+        <strong id="subtotal-amt">0.00</strong>
+      </div>
+      <div class="totals-calculations">
+        <div class="totals-items">
+          <span>Discount:</span>
+          <input id="discount" type="number" min="0" step="0.01" value="{% if order %}{{ order.discount }}{% else %}0{% endif %}" />
+        </div>
+        <div class="totals-items">
+          <span>Tax (%):</span>
+          <input id="tax-perc" type="number" min="0" step="0.01" value="{% if order %}{{ order.tax_percentage }}{% else %}0{% endif %}" />
+        </div>
+        <div class="totals-items">
+          <span>Service Charge:</span>
+          <input id="service-charge" type="number" min="0" step="0.01" value="{% if order %}{{ order.service_charge }}{% else %}0{% endif %}" />
+        </div>
+      </div>
+      <div class="totals-items">
+        <strong>Grand Total:</strong>
+        <strong id="grand-total-amt">0.00</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT PANE: split 80% (search+categories+items) / 20% (buttons) ===== -->
+  <div class="order-right">
+    <!-- TOP 80%: search + categories + menu-items -->
+    <div class="right-main">
+      <!-- Search Bar (always visible at top of this 80% block) -->
+      <div class="search-bar-order">
+        <input id="search-term" type="text" placeholder="Search items or categories …" />
+        <button id="search-btn"><i class="fa fa-search"></i></button>
+      </div>
+
+      <!-- Categories Row (horizontal scroll, second row) -->
+      <div class="categories-row" id="categories-row">
+        {% for cat in categories %}
+        <div class="category-card" data-cat-id="{{ cat.id }}">
+          {% with first_item=cat.items.first %} {% if first_item and first_item.image %}
+          <img src="{{ first_item.image.url }}" alt="{{ cat.name }}" />
+          {% else %}
+          <i class="fa fa-folder fa-2x"></i>
+          {% endif %} {% endwith %}
+          <span>{{ cat.name }}</span>
+        </div>
+        {% endfor %} {# “Deals” card always at the end of categories #}
+        <div class="category-card" id="deals-button">
+          <i class="fa fa-gifts fa-2x"></i>
+          <span>Deals</span>
+        </div>
+      </div>
+
+      <!-- Menu Items / Deals Grid (fills the rest of this 80% area, scrollable) -->
+      <div class="menu-items-grid" id="menu-items-grid">{# JS will populate with either .item-card or .deal-card #}</div>
+    </div>
+
+    <!-- BOTTOM 20%: Action Buttons (Reset / Create/Update / New / Paid) -->
+    <div class="right-bottom-actions">
+      <div class="toggle-actions">
+        <div>
+          <!-- TOKEN toggle -->
+          <label class="toggle-switch-container">
+            <span>Print Token:</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-token" {% comment %} If you’ve passed in an existing PrintStatus instance to the template, you can do something like: checked="{{ ps.token|yesno:'checked,' }}" In this example, we’ll load status via JS on page‐load (see below). {% endcomment %} >
+              <span class="slider"></span>
+            </label>
+          </label>
+        </div>
+
+        <div id="printstatus-container">
+          <!-- BILL toggle -->
+          <label class="toggle-switch-container">
+            <span>Print Bill:</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-bill" />
+              <span class="slider"></span>
+            </label>
+          </label>
+        </div>
+      </div>
+      <div class="buttons-actions right-actions">
+        <button class="btn-reset btn-action"><i class="fa fa-undo"></i> Reset</button>
+        <button class="btn-create btn-action" style="display: none" disable>
+          {% if order %}
+          <i class="fa fa-save"></i> Update {% else %} <i class="fa fa-cart-plus"></i> Create {% endif %}
+        </button>
+        <button class="btn-new btn-action" style="display: none"><i class="fa fa-plus-circle"></i> New</button>
+        <button class="btn-paid btn-action"><i class="fa fa-money-bill"></i> Paid</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ------------- Embed JSON Data for JS ------------- #}
+<script id="menu-items-data" type="application/json">
+  {{ all_menu_items_json|safe }}
+</script>
+<script id="deals-data" type="application/json">
+  {{ all_deals_json|safe }}
+</script>
+<script id="existing-items-data" type="application/json">
+  {{ existing_items_json|default:"[]"|safe }}
+</script>
+
+<script>
+  // ====== CSRF token helper ======
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+      const cookies = document.cookie.split(";");
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.startsWith(name + "=")) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+
+  // ====== Common function to POST a toggle change ======
+  function postToggle(field, isChecked) {
+    fetch("/printstatus/update/", {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrftoken,
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: `field=${field}&value=${isChecked}`,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Network response was not OK");
+        return response.json();
+      })
+      .then((data) => {
+        if (data.status !== "success") {
+          alert("Error updating print status");
+          // Revert switch if server said “error”
+          const checkbox = document.getElementById(`toggle-${field}`);
+          checkbox.checked = !checkbox.checked;
+        }
+      })
+      .catch((err) => {
+        console.error("Fetch error:", err);
+        alert("Unable to update. Check your connection.");
+        // Revert the switch on failure
+        const checkbox = document.getElementById(`toggle-${field}`);
+        checkbox.checked = !checkbox.checked;
+      });
+  }
+
+  // ====== Attach listeners on DOMContentLoaded ======
+  document.addEventListener("DOMContentLoaded", () => {
+    const tokenCheckbox = document.getElementById("toggle-token");
+    const billCheckbox = document.getElementById("toggle-bill");
+
+    // 1) When user flips “Print Token”:
+    tokenCheckbox.addEventListener("change", () => {
+      postToggle("token", tokenCheckbox.checked);
+    });
+
+    // 2) When user flips “Print Bill”:
+    billCheckbox.addEventListener("change", () => {
+      postToggle("bill", billCheckbox.checked);
+    });
+
+    // ====== (Optional) On initial page‐load, fetch current “token/bill” state ======
+    // If you want the switches to reflect whatever is already in the DB,
+    // you can do a quick GET to an endpoint that returns { token: true/false, bill: true/false }.
+    // For simplicity, we’ll reuse the same update URL but do a GET instead of POST:
+    fetch("/printstatus/update/", {
+      // we’ll modify the view to allow GET → returns current JSON
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    })
+      .then((resp) => {
+        if (!resp.ok) throw new Error("Could not load current status.");
+        return resp.json();
+      })
+      .then((data) => {
+        // data should be: { token: <bool>, bill: <bool> }
+        tokenCheckbox.checked = data.token;
+        billCheckbox.checked = data.bill;
+      })
+      .catch((err) => {
+        console.warn("Could not fetch initial PrintStatus:", err);
+        // If no record exists or error, leave both toggles unchecked (defaults to false).
+      });
+  });
+</script>
+
+<script>
+  // at top of your script you should already have:
+  let editingOrderId = {% if order %}{{ order.id }}{% else %}null{% endif %};
+  let selectedTableId = null;
+  const csrftoken = getCookie('csrftoken');
+  const tableButtons = document.querySelectorAll('.table-btn');
+
+    // ======================
+    // Parse JSON data from server
+    // ======================
+    const allMenuItems = JSON.parse(
+      document.getElementById('menu-items-data').textContent
+    );
+    const allDeals = JSON.parse(
+      document.getElementById('deals-data').textContent
+    );
+    let selectedItems = JSON.parse(
+      document.getElementById('existing-items-data').textContent
+    );
+
+
+    // Helper: format a number to two decimals
+    function formatPrice(x) {
+      return parseFloat(x).toFixed(2);
+    }
+
+    // ======================
+    // LEFT PANE: Render Order‐Items Table & Totals
+    // ======================
+
+    function recalcTotals() {
+    let subtotal = 0;
+    selectedItems.forEach(it => {
+      subtotal += it.quantity * it.unit_price;
+    });
+    document.getElementById('subtotal-amt').innerText = formatPrice(subtotal);
+
+    const discount     = parseFloat(document.getElementById('discount').value)    || 0;
+    const taxPerc      = parseFloat(document.getElementById('tax-perc').value)    || 0;
+    const serviceCharge= parseFloat(document.getElementById('service-charge').value)|| 0;
+
+    const afterDiscount = Math.max(subtotal - discount, 0);
+    const taxAmt        = afterDiscount * (taxPerc / 100);
+    const grandTotal    = afterDiscount + taxAmt + serviceCharge;
+
+    document.getElementById('grand-total-amt').innerText = formatPrice(grandTotal);
+
+    // ─── NEW: update the badge on the selected table button ──────────────────
+    if (selectedTableId) {
+      const btn = document.querySelector(`.table-btn[data-table-id="${selectedTableId}"]`);
+      if (btn) {
+        let badge = btn.querySelector('.status');
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'status';
+          btn.appendChild(badge);
+        }
+        badge.innerText = `₨${subtotal.toFixed(2)}`;
+        btn.classList.add('active');
+      }
+    }
+  }
+
+
+    function renderOrderItemsTable() {
+      const tbody = document.getElementById('order-items-body');
+      tbody.innerHTML = '';
+
+      selectedItems.forEach((it, idx) => {
+        const amount = (it.quantity * it.unit_price).toFixed(2);
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-index', idx);
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td>${it.name}</td>
+          <td>
+            <input type="number" class="item-qty-input" min="1" value="${it.quantity}">
+          </td>
+          <td>${formatPrice(it.unit_price)}</td>
+          <td class="item-amount">${amount}</td>
+          <td>
+            <button class="btn-remove-item"><i class="fa fa-trash"></i></button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      recalcTotals();
+    }
+
+    // Add an item (or increment quantity if it already exists)
+    function addItemToOrder(type, id, name, unit_price) {
+      const existingIdx = selectedItems.findIndex(
+        it => it.type === type && it.id === id
+      );
+      if (existingIdx > -1) {
+        selectedItems[existingIdx].quantity += 1;
+      } else {
+        selectedItems.push({
+          type,
+          id,
+          name,
+          quantity: 1,
+          unit_price
+        });
+      }
+      renderOrderItemsTable();
+    }
+
+    function removeItemFromOrder(idx) {
+      selectedItems.splice(idx, 1);
+      renderOrderItemsTable();
+    }
+
+
+    // ======================
+    // RIGHT PANE: Render Categories, Menu‐Items, Deals
+    // ======================
+    function highlightCategory(catId) {
+      document.querySelectorAll('.category-card').forEach(card => {
+        if (card.id === 'deals-button') return;
+        card.classList.toggle('selected',
+          parseInt(card.dataset.catId, 10) === catId
+        );
+      });
+      document.getElementById('deals-button').classList.remove('selected');
+      renderMenuItems(catId, document.getElementById('search-term').value.trim());
+    }
+
+    function renderMenuItems(catId = null, filterTerm = "") {
+      const grid = document.getElementById('menu-items-grid');
+      grid.innerHTML = '';
+      let filtered = allMenuItems;
+
+      if (catId !== null) {
+        filtered = filtered.filter(mi => mi.category_id === catId);
+      }
+      if (filterTerm) {
+        const ft = filterTerm.toLowerCase();
+        filtered = filtered.filter(
+          mi => mi.name.toLowerCase().includes(ft)
+        );
+      }
+
+      filtered.forEach(mi => {
+        const card = document.createElement('div');
+        card.className = 'item-card';
+        card.setAttribute('data-item-id', mi.id);
+        card.setAttribute('data-price', mi.price);
+        card.innerHTML = `
+          ${mi.image_url
+            ? `<img src="${mi.image_url}" alt="${mi.name}">`
+            : `<i class="fa fa-utensils fa-2x"></i>`}
+          <span>${mi.name}</span>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function showDeals(filterTerm = "") {
+      document.querySelectorAll('.category-card')
+        .forEach(card => card.classList.remove('selected'));
+      document.getElementById('deals-button')
+        .classList.add('selected');
+
+      const grid = document.getElementById('menu-items-grid');
+      grid.innerHTML = '';
+      let filtered = allDeals;
+
+      if (filterTerm) {
+        const ft = filterTerm.toLowerCase();
+        filtered = filtered.filter(
+          d => d.name.toLowerCase().includes(ft)
+        );
+      }
+      filtered.forEach(dl => {
+        const card = document.createElement('div');
+        card.className = 'deal-card';
+        card.setAttribute('data-deal-id', dl.id);
+        card.setAttribute('data-price', dl.price);
+        card.innerHTML = `
+          ${dl.image_url
+            ? `<img src="${dl.image_url}" alt="${dl.name}">`
+            : `<i class="fa fa-tag fa-2x"></i>`}
+          <span>${dl.name}</span>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+
+    // ======================
+    // Wire Up Event Handlers on DOMContentLoaded
+    // ======================
+    document.addEventListener('DOMContentLoaded', () => {
+      // 1) If editing, pre‐populate selectedItems from existing JSON
+      if (editingOrderId) {
+        const existingFromServer = JSON.parse(
+          document.getElementById('existing-items-data').textContent
+        );
+        selectedItems = existingFromServer.map(it => ({
+          type: it.type,
+          id: it.type === 'menu' ? it.menu_item_id : it.deal_id,
+          name: it.name,
+          quantity: it.quantity,
+          unit_price: it.unit_price
+        }));
+      }
+      renderOrderItemsTable();
+
+      // 2) By default, highlight the first category & show its items
+      const firstCat = document.querySelector(
+        '.category-card:not(#deals-button)'
+      );
+      if (firstCat) {
+        const firstCatId = parseInt(firstCat.dataset.catId, 10);
+        highlightCategory(firstCatId);
+      }
+
+      // 3) Category click → filter items or show deals
+      document.getElementById('categories-row')
+        .addEventListener('click', e => {
+          const card = e.target.closest('.category-card');
+          if (!card) return;
+          if (card.id === 'deals-button') {
+            showDeals(document.getElementById('search-term').value.trim());
+          } else {
+            const catId = parseInt(card.dataset.catId, 10);
+            highlightCategory(catId);
+          }
+        });
+
+      // 4) MenuItem or Deal click → add to order
+      document.getElementById('menu-items-grid')
+        .addEventListener('click', e => {
+          const itemCard = e.target.closest('.item-card');
+          if (itemCard) {
+            const id = parseInt(itemCard.dataset.itemId, 10);
+            const price = parseFloat(itemCard.dataset.price);
+            const name = itemCard.querySelector('span').innerText;
+            addItemToOrder('menu', id, name, price);
+            return;
+          }
+          const dealCard = e.target.closest('.deal-card');
+          if (dealCard) {
+            const id = parseInt(dealCard.dataset.dealId, 10);
+            const price = parseFloat(dealCard.dataset.price);
+            const name = dealCard.querySelector('span').innerText;
+            addItemToOrder('deal', id, name, price);
+          }
+        });
+
+      // 5) Remove row or quantity change
+      document.getElementById('order-items-body')
+        .addEventListener('click', e => {
+          if (e.target.closest('.btn-remove-item')) {
+            const idx = parseInt(
+              e.target.closest('tr').dataset.index, 10
+            );
+            removeItemFromOrder(idx);
+          }
+        });
+      document.getElementById('order-items-body')
+        .addEventListener('change', e => {
+          if (e.target.matches('.item-qty-input')) {
+            const tr = e.target.closest('tr');
+            const idx = parseInt(tr.dataset.index, 10);
+            const newQty = parseInt(e.target.value, 10) || 1;
+            selectedItems[idx].quantity = newQty;
+            tr.querySelector('.item-amount').innerText =
+              formatPrice(newQty * selectedItems[idx].unit_price);
+            recalcTotals();
+          }
+        });
+
+      // 6) Recalc totals when discount/tax/service fields change
+      ['discount','tax-perc','service-charge']
+        .forEach(id => {
+          document.getElementById(id)
+            .addEventListener('change', recalcTotals);
+        });
+
+      // 7) Search button: filter categories, items, or deals
+      document.getElementById('search-btn')
+        .addEventListener('click', () => {
+          const term = document.getElementById('search-term')
+            .value.trim().toLowerCase();
+
+          // Filter Categories
+          document.querySelectorAll('.category-card')
+            .forEach(card => {
+              if (card.id === 'deals-button') {
+                card.style.display = 'flex';
+                return;
+              }
+              const name = card.querySelector('span').innerText.toLowerCase();
+              card.style.display = (!term || name.includes(term))
+                ? 'flex'
+                : 'none';
+            });
+
+          // If “Deals” is currently selected, filter deals; otherwise filter menu items
+          if (document.getElementById('deals-button')
+            .classList.contains('selected')) {
+            showDeals(term);
+          } else {
+            const selCat = document.querySelector('.category-card.selected');
+            const catId = selCat ? parseInt(selCat.dataset.catId, 10) : null;
+            renderMenuItems(catId, term);
+          }
+        });
+
+      // 8) Reset button: clear everything
+      document.querySelector('.btn-reset')
+        .addEventListener('click', () => {
+          selectedItems = [];
+          renderOrderItemsTable();
+          document.getElementById('discount').value = 0;
+          document.getElementById('tax-perc').value = 0;
+          document.getElementById('service-charge').value = 0;
+          showAlert('success', 'Order reset');
+        });
+
+      // 9) New button: redirect to fresh create screen
+      document.querySelector('.btn-new')
+        .addEventListener('click', () => {
+          window.location.href = "{% url 'order_create' %}";
+        });
+
+      // 10) Create/Update button: AJAX‐post
+      document.querySelector('.btn-create')
+        .addEventListener('click', () => {
+          const discount = parseFloat(
+            document.getElementById('discount').value
+          ) || 0;
+          const taxPerc = parseFloat(
+            document.getElementById('tax-perc').value
+          ) || 0;
+          const serviceCharge = parseFloat(
+            document.getElementById('service-charge').value
+          ) || 0;
+
+          const action = editingOrderId ? 'update' : 'create';
+          const payload = buildPayload(action);
+
+          {% if order %}
+            const url = editingOrderId
+              ? "{% url 'order_update' order.id %}"
+              : "{% url 'order_create' %}";
+          {% else %}
+            const url = "{% url 'order_create' %}";
+          {% endif %}
+
+          fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': '{{ csrf_token }}'
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(resp => {
+    console.log("HTTP status:", resp.status);
+    return resp.text().then(text => {
+      console.log("Raw response text:", text);
+      try {
+        return JSON.parse(text);
+      } catch(e) {
+        throw new Error("Invalid JSON: " + e + "\nResponse was: " + text);
+      }
+    });
+  })
+  .then(data => {
+    if (data.error) {
+      Object.values(data.error).forEach(msg => showAlert('error', msg));
+    } else {
+      showAlert('success', 'Order saved!');
+      // …redirect…
+    }
+  })
+  .catch(err => {
+    console.error("Fetch/JSON error:", err);
+    showAlert('error', 'An unexpected error occurred: ' + err.message);
+  });
+        });
+
+      // 11) Paid button: create (if needed) and mark “paid” & print receipts
+      document.querySelector('.btn-paid').addEventListener('click', () => {
+    const discount = parseFloat(document.getElementById('discount').value) || 0;
+    const taxPerc  = parseFloat(document.getElementById('tax-perc').value) || 0;
+    const service  = parseFloat(document.getElementById('service-charge').value) || 0;
+
+    const payload = buildPayload('paid');
+
+    // Decide URL based on whether we're creating vs updating
+    {% if order %}
+      const url = "{% url 'order_update' order.id %}";
+    {% else %}
+      const url = "{% url 'order_create' %}";
+    {% endif %}
+
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token }}'
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.error) {
+        // Show the error from server (e.g. “Print failed: …”)
+        showAlert('error', data.error);
+      } else {
+
+          selectedItems = [];
+          renderOrderItemsTable();
+          document.getElementById('discount').value = 0;
+          document.getElementById('tax-perc').value = 0;
+          document.getElementById('service-charge').value = 0;
+          showAlert('success', 'Order reset');
+
+
+        showAlert('success', 'Order saved & sent to printer!');
+
+
+      }
+    })
+    .catch(err => {
+      console.error("Fetch error:", err);
+      showAlert('error', 'An unexpected error occurred.');
+    });
+  });
+
+    // NEW handler:
+  tableButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const newTableId = btn.dataset.tableId || null;
+
+      // 1) Define the “actually switch” logic
+      function doSwitch() {
+        fetch(`/orders/table-switch/?table_id=${newTableId}`)
+          .then(r => r.json())
+          .then(d => {
+            // update globals
+            editingOrderId  = d.order_id;
+            selectedTableId = d.table_id;
+
+            // update UI heading
+            document.getElementById('table-heading').innerText =
+              d.table_id
+                ? `Table ${btn.querySelector('span').innerText.split(' ')[1]}`
+                : 'Walk-in Customer';
+
+            // load saved items & charges
+            selectedItems = d.items.map(it => ({
+              type: it.type,
+              id:   it.type==='menu' ? it.menu_item_id : it.deal_id,
+              name: it.name,
+              quantity: it.quantity,
+              unit_price: it.unit_price
+            }));
+            document.getElementById('discount').value       = d.discount;
+            document.getElementById('tax-perc').value       = d.tax_percentage;
+            document.getElementById('service-charge').value = d.service_charge;
+
+            renderOrderItemsTable();
+
+            // highlight buttons
+            tableButtons.forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+
+            // swap Create vs Update text/icon
+            const createBtn = document.querySelector('.btn-create');
+            if (editingOrderId) {
+              createBtn.innerHTML = '<i class="fa fa-save"></i> Update';
+            } else {
+              createBtn.innerHTML = '<i class="fa fa-cart-plus"></i> Create';
+            }
+          });
+      }
+
+      // 2) If we already have an order open, save it first
+      if (editingOrderId) {
+        const draftPayload = buildPayload('update');
+        fetch(`/orders/${editingOrderId}/update/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrftoken
+          },
+          body: JSON.stringify(draftPayload)
+        })
+        // regardless of success or failure, switch afterward
+        .catch(err => console.warn('Draft save failed:', err))
+        .finally(doSwitch);
+
+      } else {
+        // brand-new walk-in → just switch
+        doSwitch();
+      }
+    });
+  });
+
+  // ─ Include table_id in every save/paid payload ─
+  function buildPayload(action) {
+    const base = {
+      discount: parseFloat(document.getElementById('discount').value)||0,
+      tax_percentage: parseFloat(document.getElementById('tax-perc').value)||0,
+      service_charge: parseFloat(document.getElementById('service-charge').value)||0,
+      items: selectedItems.map(it => ({
+        type: it.type,
+        menu_item_id: it.type==='menu' ? it.id : null,
+        deal_id:       it.type==='deal' ? it.id : null,
+        quantity: it.quantity,
+        unit_price: it.unit_price
+      })),
+      action: action
+    };
+    base.table_id = selectedTableId;
+    return base;
+  }
+
+  // then replace your fetch() calls in Create/Update/Paid to use:
+  //   const payload = buildPayload('create'|'update'|'paid');
+  //   body: JSON.stringify(payload);
+
+
+    });
+</script>
+{% endblock %}

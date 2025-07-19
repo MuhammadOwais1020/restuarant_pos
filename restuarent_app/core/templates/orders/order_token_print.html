@@ -1,0 +1,148 @@
+{# core/templates/orders/order_token_print.html #}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Token Receipt</title>
+  <style>
+    /* تھرمل پرنٹر کے لیے موزوں سٹائل */
+    body {
+      font-family: monospace;
+      font-size: 12px;
+      width: 72mm;       /* مثال کے طور پر: 72 ملی میٹر چوڑائی */
+      margin: 0;
+      padding: 0;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .header div {
+      line-height: 1.2;
+    }
+    .token-number {
+      font-size: 24px;
+      font-weight: bold;
+      text-align: center;
+      margin: 10px 0;
+    }
+    .items-list {
+      margin-top: 10px;
+    }
+    .item-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .item-row img {
+      width: 24px;
+      height: 24px;
+      margin-right: 6px;
+    }
+    .item-text {
+      font-size: 12px;
+    }
+    .summary {
+      margin-top: 10px;
+      border-top: 1px dashed #000;
+      padding-top: 6px;
+    }
+    .summary div {
+      line-height: 1.3;
+      font-size: 12px;
+    }
+    .summary .label {
+      float: left;
+    }
+    .summary .value {
+      float: right;
+    }
+    .clearfix {
+      clear: both;
+    }
+  </style>
+</head>
+<body>
+  {# ======== HEADER SECTION ======== #}
+  <div class="header">
+    <div>{{ site_name }}</div>
+    <div>{{ site_domain }}</div>
+    <div>{{ order.created_at|date:"Y-m-d H:i" }}</div>
+  </div>
+
+  {# ======== TOKEN NUMBER ======== #}
+  <div class="token-number">
+    Token #: {{ order.token_number }}
+  </div>
+
+  {# ======== ITEMS LIST ======== #}
+  <div class="items-list">
+    {% for oi in order.items.all %}
+      <div class="item-row">
+        {% if oi.menu_item %}
+          {% if oi.menu_item.image %}
+            <img src="{{ oi.menu_item.image.url }}" alt="{{ oi.menu_item.name }}">
+          {% else %}
+            <i class="fa fa-utensils"></i>
+          {% endif %}
+          <div class="item-text">
+            {{ oi.menu_item.name }} × {{ oi.quantity }}
+          </div>
+        {% else %}
+          {# Deal کے لیے اگر کوئی DealItem ہو تو #}
+          {% if oi.deal.image %}
+            <img src="{{ oi.deal.image.url }}" alt="{{ oi.deal.name }}">
+          {% else %}
+            <i class="fa fa-tag"></i>
+          {% endif %}
+          <div class="item-text">
+            {{ oi.deal.name }} × {{ oi.quantity }}
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+
+  {# ======== SUMMARY SECTION ======== #}
+  <div class="summary">
+    <div>
+      <span class="label">Subtotal:</span>
+      <span class="value">{{ order.subtotal|floatformat:2 }}</span>
+      <div class="clearfix"></div>
+    </div>
+    <div>
+      <span class="label">Discount:</span>
+      <span class="value">{{ order.discount|floatformat:2 }}</span>
+      <div class="clearfix"></div>
+    </div>
+    <div>
+      <span class="label">Tax ({{ order.tax_percentage }}%):</span>
+      <span class="value">{{ tax_amount|floatformat:2 }}</span>
+      <div class="clearfix"></div>
+    </div>
+    <div>
+      <span class="label">Service:</span>
+      <span class="value">{{ order.service_charge|floatformat:2 }}</span>
+      <div class="clearfix"></div>
+    </div>
+    <div>
+      <span class="label"><strong>Grand Total:</strong></span>
+      <span class="value"><strong>{{ total_amount|floatformat:2 }}</strong></span>
+      <div class="clearfix"></div>
+    </div>
+  </div>
+
+  <script>
+    // Automatically trigger the print dialog on load.
+    document.addEventListener('DOMContentLoaded', function() {
+      window.print();
+      // When the print dialog closes (either Print or Cancel), immediately:
+      const orderId = {{ order.id }};
+      window.close();
+      if (window.opener && typeof window.opener.openBill === 'function') {
+        window.opener.openBill(orderId);
+      }
+    });
+  </script>
+</body>
+</html>

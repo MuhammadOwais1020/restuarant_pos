@@ -1,0 +1,45 @@
+{% extends 'base.html' %} {% load static %}
+{% block title %}Login | BARKAT POS{% endblock %}
+
+{% block extra_head %}
+<style>
+.main-nav{
+  display: none;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+
+<div class="login-bg">
+  <div class="login-container">
+    <form method="post" class="login-form">
+      {% csrf_token %}
+      <div class="login-header">
+        <img src="{% static 'images/logo.png' %}" alt="" class="logo">
+        <h2><i class="fa fa-utensils"></i> Restaurant POS</h2>
+      </div>
+      {% if error %}
+        <div class="error-message"><i class="fa fa-exclamation-circle"></i> {{ error }}</div>
+      {% endif %}
+      <div class="input-group">
+        <input name="username" placeholder="Username" required>
+      </div>
+      <div class="input-group">
+        <input name="password" type="password" placeholder="Password" required>
+      </div>
+      <button type="submit" class="btn-submit"><i class="fa fa-sign-in-alt"></i> Login</button>
+      <div class="login-footer">
+        <p>Powered by <a href="https://qonkartech.com" target="_blank">Qonkar Technologies</a></p>
+        <p><i class="fab fa-whatsapp"></i> +92 319 3007820</p>
+        <div class="social-icons">
+          <a href="#"><i class="fab fa-facebook-f"></i></a>
+          <a href="#"><i class="fab fa-instagram"></i></a>
+          <a href="#"><i class="fab fa-twitter"></i></a>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

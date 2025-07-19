@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}
+  {% if object %}Edit Table #{{ object.number }}{% else %}New Table{% endif %}
+{% endblock %}
+
+{% block content %}
+<div id="category-form">
+  <h1>
+    {% if object %}<i class="fa fa-edit"></i> Edit Table{% else %}
+    <i class="fa fa-plus-circle"></i> New Table{% endif %}
+  </h1>
+
+  <form method="post">
+    {% csrf_token %}
+    <div class="form-group">
+      {{ form.number.label_tag }}
+      {{ form.number }}
+    </div>
+    <div class="form-group">
+      {{ form.seats.label_tag }}
+      {{ form.seats }}
+    </div>
+    <div class="form-check">
+      {{ form.is_occupied }} {{ form.is_occupied.label_tag }}
+    </div>
+    <button type="submit" class="btn-submit">
+      {% if object %}Update{% else %}Create{% endif %}
+    </button>
+    <a href="{% url 'table_list' %}" class="btn btn-secondary">Cancel</a>
+  </form>
+  
+</div>
+{% endblock %}

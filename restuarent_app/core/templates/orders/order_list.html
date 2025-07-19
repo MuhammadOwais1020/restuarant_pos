@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block title %}Orders{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-receipt"></i> Orders</h1>
+  <a href="{% url 'order_create' %}" class="btn">
+    <i class="fa fa-plus"></i> New Order
+  </a>
+</div>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Table</th>
+      <th>Status</th>
+      <th>Created At</th>
+      <th>Token #</th>
+      <th>Subtotal</th>
+      <th>Total Amt</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for order in orders %}
+    <tr id="order-{{ order.pk }}">
+      <td>{{ order.number }}</td>
+      <td>
+        {% if order.table %}
+          {{ order.table.number }}
+        {% else %}
+          &ndash;
+        {% endif %}
+      </td>
+      <td>{{ order.get_status_display }}</td>
+      <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
+      <td>{{ order.token_number }}</td>
+
+      {# Display the annotated subtotal (or 0.00 if none) #}
+      <td>
+        {% if order.subtotal %}
+          {{ order.subtotal|floatformat:2 }}
+        {% else %}
+          0.00
+        {% endif %}
+      </td>
+
+      {# Display the annotated total_amount (or 0.00 if none) #}
+      <td>
+        {% if order.total_amount %}
+          {{ order.total_amount|floatformat:2 }}
+        {% else %}
+          0.00
+        {% endif %}
+      </td>
+
+      <td>
+        <a href="{% url 'order_detail' order.pk %}"><i class="fa fa-eye"></i></a>
+        <a href="{% url 'order_update' order.pk %}"><i class="fa fa-edit"></i></a>
+        <button class="btn-delete" data-url="{% url 'order_delete' order.pk %}">
+          <i class="fa fa-trash"></i>
+        </button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="8" class="text-center">No orders found.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if is_paginated %}
+    <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+    {% if page_obj.has_previous %}
+      <a href="?page={{ page_obj.previous_page_number }}">&#171; Prev</a>
+    {% endif %}
+
+    {% if page_obj.has_next %}
+      <a href="?page={{ page_obj.next_page_number }}">Next &#187;</a>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

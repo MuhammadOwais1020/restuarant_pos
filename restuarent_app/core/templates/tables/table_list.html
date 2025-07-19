@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}Tables{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Tables</h1>
+  <a href="{% url 'table_create' %}" class="btn btn-submit">
+    <i class="fa fa-plus-circle"></i> New Table
+  </a>
+</div>
+
+<div class="table-wrapper">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Number</th>
+        <th>Seats</th>
+        <th>Occupied</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for table in tables %}
+      <tr>
+        <td>{{ table.number }}</td>
+        <td>{{ table.seats }}</td>
+        <td>{{ table.is_occupied|yesno:"Yes,No" }}</td>
+        <td>
+          <a href="{% url 'table_edit' table.pk %}" class="btn-edit">
+            <i class="fa fa-edit"></i>
+          </a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">No tables found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if is_paginated %}
+  <nav class="pagination">
+    {% if page_obj.has_previous %}
+      <a href="?page=1">&laquo; first</a>
+      <a href="?page={{ page_obj.previous_page_number }}">&lsaquo; prev</a>
+    {% endif %}
+    <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}
+      <a href="?page={{ page_obj.next_page_number }}">next &rsaquo;</a>
+      <a href="?page={{ page_obj.paginator.num_pages }}">last &raquo;</a>
+    {% endif %}
+  </nav>
+{% endif %}
+{% endblock %}

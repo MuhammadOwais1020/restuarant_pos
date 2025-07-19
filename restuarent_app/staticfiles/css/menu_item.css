@@ -1,0 +1,155 @@
+/* Search Bar Refinement */
+.search-bar {
+        display: flex;
+        max-width: 500px;
+        margin: var(--space-md) auto var(--space-lg);
+        background: #fff;
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+}
+
+.search-bar input {
+        flex: 1;
+        border: none;
+        padding: var(--space-sm) var(--space-md);
+        font-size: var(--font-size-base);
+}
+
+.search-bar input:focus {
+        outline: none;
+}
+
+.search-bar button {
+        background: var(--color-primary);
+        border: none;
+        padding: var(--space-sm) var(--space-lg);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        transition: background .3s;
+}
+
+.search-bar button:hover {
+        background: var(--color-primary-dark);
+}
+
+.search-bar button .fa-search {
+        font-size: 1rem;
+}
+
+
+/* ---------------------------------
+   Menu Item Form Page Styles
+   --------------------------------- */
+
+/* Center form in a card */
+#item-form {
+        max-width: 600px;
+        margin: var(--space-lg) auto var(--space-xl);
+        padding: var(--space-lg);
+        background: #fff;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-md);
+}
+
+/* Page title with icon */
+h1 {
+        font-size: 1.75rem;
+        color: var(--color-text);
+        max-width: 600px;
+        margin: var(--space-lg) auto var(--space-md);
+        display: flex;
+        align-items: center;
+}
+
+h1::before {
+        content: "\f02c";
+        /* FontAwesome “tag” icon */
+        font-family: "Font Awesome 5 Free";
+        font-weight: 900;
+        margin-right: var(--space-xs);
+        color: var(--color-primary);
+}
+
+/* Labels & grouping */
+#item-form label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: var(--space-xs);
+}
+
+/* Text, number, select, file & textarea inputs */
+#item-form input[type="text"],
+#item-form input[type="number"],
+#item-form select,
+#item-form textarea,
+#item-form input[type="file"] {
+        width: 100%;
+        padding: var(--space-sm);
+        border: 1px solid #ddd;
+        border-radius: var(--radius-sm);
+        margin-bottom: var(--space-md);
+        font-size: var(--font-size-base);
+        background: #fafafa;
+}
+
+/* Checkbox styling */
+#item-form .field-checkbox {
+        display: flex;
+        align-items: center;
+        margin-bottom: var(--space-md);
+}
+
+#item-form input[type="checkbox"] {
+        transform: scale(1.2);
+        margin-right: var(--space-xs);
+        cursor: pointer;
+}
+
+/* Save Item button with disk icon */
+#item-form .btn-submit {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        background: var(--color-primary);
+        padding: var(--space-sm);
+        border-radius: var(--radius-sm);
+        color: #fff;
+        font-size: var(--font-size-base);
+        transition: background .3s;
+        border: none;
+        cursor: pointer;
+}
+
+#item-form .btn-submit:hover {
+        background: var(--color-primary-dark);
+}
+
+#item-form .btn-submit::before {
+        content: "\f0c7";
+        font-family: "Font Awesome 5 Free";
+        font-weight: 900;
+        margin-right: var(--space-xs);
+}
+
+
+/* Image preview styling */
+.image-preview-container {
+        text-align: center;
+        margin-top: var(--space-md);
+}
+
+#image-preview {
+        display: none;
+        max-width: 200px;
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-sm);
+}
+
+#image-preview.show {
+        display: inline-block;
+}

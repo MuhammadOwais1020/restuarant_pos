@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Deal Detail{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-tag"></i> {{ deal.name }}</h1>
+  <a href="{% url 'deal_list' %}" class="btn"><i class="fa fa-arrow-left"></i> Back to Deals</a>
+</div>
+
+<div class="detail-container">
+  {% if deal.image %}
+    <img src="{{ deal.image.url }}" alt="{{ deal.name }}" class="detail-image">
+  {% endif %}
+  <p><strong>Description:</strong> {{ deal.description }}</p>
+  <p><strong>Price:</strong> {{ deal.price }}</p>
+  <p><strong>Available:</strong> {{ deal.is_available|yesno:'Yes,No' }}</p>
+
+  <h3><i class="fa fa-box"></i> Items in Deal</h3>
+  <ul>
+    {% for di in deal.deal_items.all %}
+      <li>{{ di.quantity }} x {{ di.menu_item.name }}</li>
+    {% empty %}
+      <li>No items added to this deal.</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

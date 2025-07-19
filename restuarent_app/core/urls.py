@@ -1,0 +1,82 @@
+from django.urls import path
+from django.views.generic import RedirectView
+from django.contrib import admin
+
+from .views import LoginView, LogoutView, DashboardView, update_print_status, reports_view, sales_report
+from .views import TableListView, TableCreateView, TableUpdateView, TableSwitchView
+
+from .views import (
+    CategoryListView, CategoryCreateView, CategoryDetailView,
+    CategoryUpdateView, CategoryDeleteView,
+    MenuItemListView, MenuItemCreateView, MenuItemDetailView,
+    MenuItemUpdateView, MenuItemDeleteView,
+    OrderListView, OrderDetailView, OrderCreateView, OrderUpdateView, OrderDeleteView,
+    DealListView, DealCreateView, DealDetailView, DealUpdateView, DealDeleteView
+)
+
+from .escpos_test import(
+        simple_win32print_test
+)
+
+urlpatterns = [
+    path(
+        "",
+        RedirectView.as_view(pattern_name="login", permanent=False),
+        name="home",
+    ),
+    path("admin/", admin.site.urls),
+    path("login/", LoginView.as_view(), name="login"),
+    path("logout/", LogoutView.as_view(), name="logout"),
+    path("dashboard/", DashboardView.as_view(), name="dashboard"),
+
+    # Categories CRUD
+    path('categories/', CategoryListView.as_view(), name='category_list'),
+    path('categories/create/', CategoryCreateView.as_view(), name='category_create'),
+    path('categories/<int:pk>/', CategoryDetailView.as_view(), name='category_detail'),
+    path('categories/<int:pk>/edit/', CategoryUpdateView.as_view(), name='category_edit'),
+    path('categories/<int:pk>/delete/', CategoryDeleteView.as_view(), name='category_delete'),
+
+    # Menu Items CRUD
+    path('menu-items/', MenuItemListView.as_view(), name='menuitem_list'),
+    path('menu-items/create/', MenuItemCreateView.as_view(), name='menuitem_create'),
+    path('menu-items/<int:pk>/', MenuItemDetailView.as_view(), name='menuitem_detail'),
+    path('menu-items/<int:pk>/edit/', MenuItemUpdateView.as_view(), name='menuitem_edit'),
+    path('menu-items/<int:pk>/delete/', MenuItemDeleteView.as_view(), name='menuitem_delete'),
+
+    # ======== Deals CRUD ========
+    path('deals/', DealListView.as_view(), name='deal_list'),
+    path('deals/create/', DealCreateView.as_view(), name='deal_create'),
+    path('deals/<int:pk>/', DealDetailView.as_view(), name='deal_detail'),
+    path('deals/<int:pk>/edit/', DealUpdateView.as_view(), name='deal_edit'),
+    path('deals/<int:pk>/delete/', DealDeleteView.as_view(), name='deal_delete'),
+
+    # ======== Orders & Printing ========
+    path('orders/', OrderListView.as_view(), name='order_list'),
+    path('orders/create/', OrderCreateView.as_view(), name='order_create'),
+    path('orders/<int:pk>/', OrderDetailView.as_view(), name='order_detail'),
+    path('orders/<int:pk>/edit/', OrderUpdateView.as_view(), name='order_edit'),
+    path('orders/<int:pk>/delete/', OrderDeleteView.as_view(), name='order_delete'),
+    path('orders/<int:pk>/update/', OrderUpdateView.as_view(), name='order_update'),  # ← Here
+    path('print/', simple_win32print_test, name="simple_windows_test_print"),
+
+    path(
+        "printstatus/update/",
+        update_print_status,
+        name="update_print_status"
+    ),
+
+    path('reports/', reports_view, name='reports'),
+
+    path('api/sales-report/', sales_report, name='sales-report'),
+
+    path('tables/',          TableListView.as_view(),   name='table_list'),
+    path('tables/create/',   TableCreateView.as_view(), name='table_create'),
+    path('tables/<int:pk>/edit/', TableUpdateView.as_view(), name='table_edit'),
+    
+    path(
+      'orders/table-switch/',
+      TableSwitchView.as_view(),
+      name='table_switch'
+    ),
+    
+]

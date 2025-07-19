@@ -1,0 +1,516 @@
+{% extends 'base.html' %}
+
+{% block title %}
+  {% if view.object %}
+    Edit Deal
+  {% else %}
+    New Deal
+  {% endif %}
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* --------------------------------------------
+     Global Variables (if you have a root file,
+     these could be moved there instead)
+     -------------------------------------------- */
+  :root {
+    --sidebar-width: 20%;              /* 20% for details pane */
+    --main-width: 80%;                 /* 80% for items table */
+    --header-height: 60px;             /* Height of the top nav/header */
+    --footer-height: 50px;             /* Height of the bottom Save button bar */
+    --primary-color: #ff5722;
+    --secondary-bg: #f4f7fa;
+    --font-color: #333;
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --shadow-sm: 0 2px 6px rgba(0,0,0,0.1);
+    --shadow-md: 0 4px 10px rgba(0,0,0,0.1);
+  }
+
+  /* --------------------------------------------
+     Reset & Base
+     -------------------------------------------- */
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body, html {
+    width: 100%;
+    height: 100%;
+    font-family: 'Segoe UI', sans-serif;
+    color: var(--font-color);
+    background: var(--secondary-bg);
+    overflow: hidden; /* Prevent entire page from scrolling */
+  }
+  a {
+    text-decoration: none;
+    color: inherit;
+  }
+  button, .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary-color);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: var(--space-sm) var(--space-md);
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.2s ease;
+  }
+  button:hover, .btn:hover {
+    background: #e64a19;
+  }
+  .btn-back {
+    background: transparent;
+    color: var(--font-color);
+    padding: var(--space-xs) var(--space-sm);
+  }
+  .btn-back:hover {
+    background: rgba(0,0,0,0.05);
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin-bottom: var(--space-md);
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+  }
+
+  /* --------------------------------------------
+     Page Header (Back + Title)
+     -------------------------------------------- */
+  .page-header {
+    height: var(--header-height);
+    padding: 0 var(--space-md);
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* --------------------------------------------
+     Main Application Container
+     -------------------------------------------- */
+  .deal-container {
+    display: flex;
+    height: calc(100vh - var(--header-height) - var(--footer-height));
+    width: 100%;
+  }
+
+  /* --------------------------------------------
+     Left Pane: Deal Items (80%)
+     -------------------------------------------- */
+  .deal-items-pane {
+    width: var(--main-width);
+    background: #fff;
+    padding: var(--space-md);
+    overflow-y: auto;
+    box-shadow: var(--shadow-sm);
+  }
+  /* Section header for the items table */
+  .deal-items-pane h3 {
+    font-size: 1.25rem;
+    margin-bottom: var(--space-md);
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+  }
+
+  /* Table container */
+  .deal-items-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .deal-items-table thead {
+    background: var(--primary-color);
+    color: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .deal-items-table th,
+  .deal-items-table td {
+    padding: var(--space-sm);
+    border-bottom: 1px solid #eee;
+    text-align: left;
+  }
+  .deal-items-table th:nth-child(1) { width: 5%; }
+  .deal-items-table th:nth-child(2) { width: 45%; }
+  .deal-items-table th:nth-child(3) { width: 15%; }
+  .deal-items-table th:nth-child(4) { width: 15%; }
+  .deal-items-table th:nth-child(5) { width: 10%; }
+  .deal-items-table th:nth-child(6) { width: 10%; }
+
+  /* Input and select inside table cells */
+  .deal-items-table input[type="number"],
+  .deal-items-table select {
+    width: 100%;
+    padding: var(--space-xs);
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+  }
+  .deal-items-table .btn-remove-item {
+    background: none;
+    color: var(--primary-color);
+  }
+  .deal-items-table .btn-remove-item:hover {
+    color: #e74c3c;
+  }
+
+  /* “Add Menu Item” button below the table */
+  #add-item-btn {
+    margin-top: var(--space-md);
+    background: var(--primary-color);
+  }
+  #add-item-btn i {
+    margin-right: var(--space-xs);
+  }
+
+  /* --------------------------------------------
+     Right Pane: Deal Details Sidebar (20%)
+     -------------------------------------------- */
+  .deal-details-pane {
+    width: var(--sidebar-width);
+    background: #fafafa;
+    padding: var(--space-md);
+    border-left: 1px solid #eaeaea;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    overflow-y: auto;
+  }
+  .deal-details-pane label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: var(--space-xs);
+  }
+  .deal-details-pane input[type="text"],
+  .deal-details-pane input[type="number"],
+  .deal-details-pane textarea {
+    width: 100%;
+    padding: var(--space-sm);
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    margin-bottom: var(--space-md);
+  }
+  .deal-details-pane input[type="file"] {
+    margin-top: var(--space-xs);
+    margin-bottom: var(--space-md);
+  }
+  .deal-details-pane .field-checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    margin-bottom: var(--space-md);
+  }
+  .deal-details-pane .image-preview-container {
+    text-align: center;
+  }
+  .deal-details-pane #deal-image-preview {
+    max-width: 100%;
+    margin-top: var(--space-md);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* --------------------------------------------
+     Fixed Footer: “Save Deal” Button (Full Width)
+     -------------------------------------------- */
+  .deal-footer {
+    height: var(--footer-height);
+    background: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+  }
+  .deal-footer button {
+    width: 90%;
+    height: 80%;
+    font-size: 1.1rem;
+  }
+
+  /* --------------------------------------------
+     Utility: Hide scrollbars in WebKit (optional)
+     -------------------------------------------- */
+  /* For left pane */
+  .deal-items-pane::-webkit-scrollbar,
+  .deal-details-pane::-webkit-scrollbar {
+    width: 6px;
+  }
+  .deal-items-pane::-webkit-scrollbar-thumb,
+  .deal-details-pane::-webkit-scrollbar-thumb {
+    background-color: rgba(0,0,0,0.1);
+    border-radius: 3px;
+  }
+
+  /* In your <style> (or in base.css) */
+.btn-submit-sidebar {
+  margin-top: var(--space-md);
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) var(--space-md);
+  width: 100%;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.btn-submit-sidebar:hover {
+  background: #e64a19;
+}
+
+</style>
+{% endblock %}
+
+
+{% block content %}
+<div class="page-header">
+  <div>
+    {% if view.object %}
+      <h1><i class="fa fa-edit"></i> Edit Deal</h1>
+    {% else %}
+      <h1><i class="fa fa-plus"></i> New Deal</h1>
+    {% endif %}
+  </div>
+  <a href="{% url 'deal_list' %}" class="btn-back">
+    <i class="fa fa-arrow-left"></i> Back
+  </a>
+</div>
+
+<div class="deal-container">
+
+  <!-- ===========================
+       Left Pane: Deal Items Table
+       =========================== -->
+  <div class="deal-items-pane">
+
+    <h3><i class="fa fa-box-open"></i> Add Items to Deal</h3>
+    <p>Select menu items and specify quantity:</p>
+
+    <table class="deal-items-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Menu Item</th>
+          <th>Quantity</th>
+          <th>Unit Price</th>
+          <th>Total</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="deal-items-container">
+        {# JavaScript will inject each <tr> here #}
+      </tbody>
+    </table>
+
+    <button type="button" id="add-item-btn">
+      <i class="fa fa-plus"></i> Add Menu Item
+    </button>
+  </div>
+
+
+  <!-- ===========================
+       Right Pane: Deal Details Sidebar
+       =========================== -->
+  <div class="deal-details-pane">
+    <form id="deal-form" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      <div>
+        <label for="id_name">Deal Name</label>
+        {{ form.name }}
+      </div>
+
+      <div>
+        <label for="id_description">Description</label>
+        {{ form.description }}
+      </div>
+
+      <div>
+        <label for="id_price">Price</label>
+        {{ form.price }}
+      </div>
+
+      <div class="field-checkbox">
+        {{ form.is_available }}
+        <label for="id_is_available">Is Available</label>
+      </div>
+
+      <div>
+        <label for="id_image">Image (optional)</label>
+        {{ form.image }}
+        <div class="image-preview-container">
+          <img id="deal-image-preview" alt="Deal preview">
+        </div>
+      </div>
+
+      {# Hidden field to carry the JSON-serialized items #}
+      <input type="hidden" name="deal_items_json" id="id_deal_items_json">
+
+      <button type="submit" class="btn-submit-sidebar">
+        <i class="fa fa-save"></i>  Save Deal
+      </button>
+
+    </form>
+  </div>
+
+</div>
+
+<!-- ===========================
+     Fixed Footer: Save Deal Button
+     =========================== -->
+<div class="deal-footer">
+  <button form="deal-form" type="submit">
+    <i class="fa fa-save"></i> Save Deal
+  </button>
+</div>
+
+<script>
+  // ================================
+  // 1) Load JSON data from context
+  // ================================
+  const menuItems = JSON.parse('{{ menu_items_json|safe }}');
+  const existing = JSON.parse('{{ initial_deal_items|default:"[]"|safe }}');
+
+  // Helper: format number as two decimals
+  function formatPrice(x) {
+    return parseFloat(x).toFixed(2);
+  }
+
+  // ====================================
+  // 2) Render all rows in the items table
+  // ====================================
+  function renderDealItemsList() {
+    const tbody = $('#deal-items-container');
+    tbody.empty();
+
+    existing.forEach((entry, idx) => {
+      // Find the menuItem object for this entry
+      const mi = menuItems.find(m => m.pk === entry.menu_item_id);
+      const unitPrice = mi ? mi.price : 0;
+      const lineTotal = (unitPrice * entry.quantity).toFixed(2);
+
+      const row = $(`
+        <tr data-index="${idx}">
+          <td>${idx + 1}</td>
+          <td>
+            <select class="menu-item-select">
+              ${menuItems.map(m =>
+                `<option value="${m.pk}" ${m.pk === entry.menu_item_id ? 'selected' : ''}>
+                  ${m.name}
+                </option>`
+              ).join('')}
+            </select>
+          </td>
+          <td>
+            <input type="number" class="deal-item-qty" min="1" value="${entry.quantity}">
+          </td>
+          <td>${formatPrice(unitPrice)}</td>
+          <td class="line-total">${lineTotal}</td>
+          <td>
+            <button type="button" class="btn-remove-item">
+              <i class="fa fa-trash"></i>
+            </button>
+          </td>
+        </tr>
+      `);
+
+      tbody.append(row);
+    });
+  }
+
+  // ==================================
+  // 3) Add a new blank row (default to first item)
+  // ==================================
+  $('#add-item-btn').click(() => {
+    existing.push({ menu_item_id: menuItems[0].pk, quantity: 1 });
+    renderDealItemsList();
+  });
+
+  // ==================================
+  // 4) Remove a row on trash icon click
+  // ==================================
+  $('#deal-items-container').on('click', '.btn-remove-item', function() {
+    const idx = $(this).closest('tr').data('index');
+    existing.splice(idx, 1);
+    renderDealItemsList();
+  });
+
+  // =========================================
+  // 5) Update entry when select or quantity changes
+  // =========================================
+  $('#deal-items-container').on('change', '.menu-item-select, .deal-item-qty', function() {
+    const row = $(this).closest('tr');
+    const idx = row.data('index');
+    const selectedId = +row.find('.menu-item-select').val();
+    const qty = +row.find('.deal-item-qty').val();
+
+    existing[idx].menu_item_id = selectedId;
+    existing[idx].quantity = qty;
+
+    // Recompute that row’s total price
+    const unitPrice = (menuItems.find(m => m.pk === selectedId) || {}).price || 0;
+    row.find('.line-total').text(formatPrice(unitPrice * qty));
+  });
+
+  // ==================================
+  // 6) Show image preview when chosen
+  // ==================================
+  $('#id_image').on('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    $('#deal-image-preview').attr('src', url).addClass('show');
+  });
+
+  // ==================================
+  // 7) On form submit: serialize items
+  //    and AJAX‐POST to same URL
+  // ==================================
+  $('#deal-form').on('submit', function(e) {
+    e.preventDefault();
+
+    // Put existing[] into hidden field
+    $('#id_deal_items_json').val(JSON.stringify(existing));
+    const fd = new FormData(this);
+
+    $.ajax({
+      url: window.location.href,
+      method: 'POST',
+      processData: false,
+      contentType: false,
+      data: fd,
+      success: () => {
+        showAlert('success', 'Deal saved successfully');
+        setTimeout(() => {
+          window.location.href = "{% url 'deal_list' %}";
+        }, 600);
+      },
+      error: (xhr) => {
+        const errs = xhr.responseJSON || {};
+        Object.values(errs).forEach(arr => {
+          arr.forEach(msg => showAlert('error', msg));
+        });
+      }
+    });
+  });
+
+  // ==================================
+  // 8) On page‐load, render rows
+  // ==================================
+  $(document).ready(() => {
+    renderDealItemsList();
+  });
+</script>
+{% endblock %}

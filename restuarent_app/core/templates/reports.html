@@ -1,0 +1,336 @@
+{# core/templates/reports.html #}
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Reports{% endblock %}
+
+{% block extra_head %}
+    {# Load Chart.js from CDN #}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* Container for the entire report page */
+        .report-container {
+            padding: var(--space-xl);
+        }
+
+        /* Simple flex layout for the four summary numbers */
+        .summary-cards {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-lg);
+            margin-bottom: var(--space-lg);
+        }
+
+        .summary-card {
+            flex: 1 1 calc(25% - var(--space-lg));
+            background: #fff;
+            padding: var(--space-md);
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow-sm);
+            text-align: center;
+        }
+
+        .summary-card h3 {
+            margin-bottom: var(--space-sm);
+            color: var(--color-primary-dark);
+        }
+
+        .summary-card p {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        /* Date range form styling */
+        .date-form {
+            margin-bottom: var(--space-lg);
+            display: flex;
+            align-items: flex-end;
+            gap: var(--space-md);
+        }
+
+        .date-form label {
+            display: flex;
+            flex-direction: column;
+            font-size: var(--font-size-sm);
+        }
+
+        .date-form input[type="date"] {
+            padding: var(--space-xs);
+            border: 1px solid #ccc;
+            border-radius: var(--border-radius-sm);
+            font-size: var(--font-size-base);
+        }
+
+        .date-form .btn-submit {
+            padding: var(--space-sm) var(--space-md);
+            background: var(--color-primary);
+            color: #fff;
+            border: none;
+            border-radius: var(--border-radius-sm);
+            cursor: pointer;
+            font-size: var(--font-size-base);
+            transition: background .2s ease;
+        }
+
+        .date-form .btn-submit:hover {
+            background: var(--color-primary-dark);
+        }
+
+        /* NEW: Flex row for charts */
+        .charts-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-lg);
+            margin-bottom: var(--space-xl);
+        }
+
+        .charts-row .chart-wrapper {
+            flex: 1 1 calc(50% - var(--space-lg)); /* 50% width each, minus gap */
+            background: #fff;
+            padding: var(--space-md);
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow-sm);
+        }
+
+        .chart-wrapper h4 {
+            margin-bottom: var(--space-md);
+            color: var(--color-text);
+        }
+
+        /* On small screens, stack charts vertically */
+        @media (max-width: 768px) {
+            .charts-row .chart-wrapper {
+                flex: 1 1 100%;
+            }
+        }
+    </style>
+{% endblock %}
+
+
+{% block content %}
+<div class="report-container">
+    <h2>Sales Reports</h2>
+
+    {# ——— Date Range Filter Form ——— #}
+    <form method="get" class="date-form">
+        <div>
+            <label for="start_date">Start Date:</label>
+            <input
+                type="date"
+                id="start_date"
+                name="start_date"
+                value="{{ start_date }}"
+            >
+        </div>
+
+        <div>
+            <label for="end_date">End Date:</label>
+            <input
+                type="date"
+                id="end_date"
+                name="end_date"
+                value="{{ end_date }}"
+            >
+        </div>
+
+        <button type="submit" class="btn-submit">Apply Filter</button>
+    </form>
+
+    {# ——— Four Summary Cards ——— #}
+    <div class="summary-cards">
+        <div class="summary-card">
+            <h3>Today's Sales</h3>
+            <p>PKR {{ today_total }}</p>
+        </div>
+
+        <div class="summary-card">
+            <h3>This Month's Sales</h3>
+            <p>PKR {{ this_month_total }}</p>
+        </div>
+
+        <div class="summary-card">
+            <h3>Total Revenue<br><small>({{ start_date }} to {{ end_date }})</small></h3>
+            <p>PKR {{ total_revenue }}</p>
+        </div>
+
+        <div class="summary-card">
+            <h3>Total Orders</h3>
+            <p>{{ total_orders }}</p>
+        </div>
+    </div>
+
+    {# ——— Charts Row: 50% / 50% ——— #}
+    <div class="charts-row">
+        {# Chart #1: Daily Sales (Last 7 Days) ——— #}
+        <div class="chart-wrapper">
+            <h4>Daily Sales (Last 7 Days)</h4>
+            <canvas id="dailySalesChart"></canvas>
+        </div>
+
+        {# Chart #2: Top 10 Best‐Selling Items ——— #}
+        <div class="chart-wrapper">
+            <h4>Top 10 Best‐Selling Menu Items<br>
+                <small>({{ start_date }} to {{ end_date }})</small>
+            </h4>
+            <canvas id="topItemsChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Sales Report Section -->
+<section id="sales-report" class="sales-report">
+  <header class="sales-report__header">
+    <h2 class="sales-report__title">Item Sales Report</h2>
+    <form class="sales-report__filter" id="sales-filter-form" method="get" action="/api/sales-report/">
+      <div class="sales-report__filter-group">
+        <label for="start_date">From Date</label>
+        <input type="date" id="start_date" name="start_date" required>
+      </div>
+      <div class="sales-report__filter-group">
+        <label for="end_date">To Date</label>
+        <input type="date" id="end_date" name="end_date" required>
+      </div>
+      <button type="submit" class="btn-submit">Filter</button>
+    </form>
+  </header>
+
+  <div class="sales-report__table-wrapper">
+    <table class="sales-report__table">
+      <thead>
+        <tr>
+          <th>Item Name</th>
+          <th>Quantity Sold</th>
+          <th>Sale Date</th>
+        </tr>
+      </thead>
+      <tbody id="sales-report-body">
+        <!-- Rows will be injected here -->
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+
+{# ——— JavaScript to Render Chart.js Charts ——— #}
+<script>
+    // 1) Grab JSON data passed from the view (already safe because we cast to float/int)
+    const dailyLabels = {{ daily_labels|safe }};
+    const dailyData   = {{ daily_data|safe }};
+
+    const topLabels   = {{ top_labels|safe }};
+    const topData     = {{ top_data|safe }};
+
+    // 2) Daily Sales Line Chart (PKR)
+    const ctxDaily = document.getElementById('dailySalesChart').getContext('2d');
+    new Chart(ctxDaily, {
+        type: 'line',
+        data: {
+            labels: dailyLabels,
+            datasets: [{
+                label: 'Revenue (PKR)',
+                data: dailyData,
+                fill: true,
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                tension: 0.2,
+                pointRadius: 4,
+                pointBackgroundColor: 'rgba(75, 192, 192, 1)',
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Date'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Revenue (PKR)'
+                    },
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // 3) Top 10 Best‐Selling Items Horizontal Bar Chart
+    const ctxTop = document.getElementById('topItemsChart').getContext('2d');
+    new Chart(ctxTop, {
+        type: 'bar',
+        data: {
+            labels: topLabels,
+            datasets: [{
+                label: 'Quantity Sold',
+                data: topData,
+                backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                borderColor: 'rgba(255, 99, 132, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y',  // horizontal bars
+            responsive: true,
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Quantity'
+                    },
+                    beginAtZero: true
+                },
+                y: {
+                    title: {
+                        display: false
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+
+    //sales report by items
+    async function fetchSalesReport(startDate, endDate) {
+  const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+  const url = `/api/sales-report/?${params}`;
+  try {
+    const resp = await fetch(url, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    if (!resp.ok) throw new Error(`Status ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    console.error('Error fetching sales report:', err);
+    return [];
+  }
+}
+
+document
+  .getElementById('sales-filter-form')
+  .addEventListener('submit', async e => {
+    e.preventDefault();
+    const start = e.target.start_date.value;
+    const end   = e.target.end_date.value;
+    const data  = await fetchSalesReport(start, end);
+    const tbody = document.getElementById('sales-report-body');
+    tbody.innerHTML = data.map(item => `
+      <tr>
+        <td>${item.name}</td>
+        <td>${item.total_qty}</td>
+        <td>${item.last_sold}</td>
+      </tr>
+    `).join('');
+  });
+
+</script>
+{% endblock %}

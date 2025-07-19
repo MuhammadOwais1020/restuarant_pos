@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+{% if view.object %}
+  <h1>Edit Category</h1>
+{% else %}
+  <h1>New Category</h1>
+{% endif %}
+<form id="category-form" method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit" class="btn-submit">Save</button>
+</form>
+<script>
+$('#category-form').on('submit', function(e) {
+  e.preventDefault();
+  const $form = $(this);
+  $.ajax({
+    url: window.location.href,
+    method: 'POST',
+    data: $form.serialize(),               
+    success: function() {
+      showAlert('success', 'Category saved successfully!');
+      setTimeout(()=>{
+        window.location.href = "{% url 'category_list' %}";
+      }, 800);
+    },
+    error: function(xhr) {
+  const errors = xhr.responseJSON || {};
+  Object.values(errors).forEach(fieldErrors => {
+    fieldErrors.forEach(msg => {
+      showAlert('error', msg);
+    });
+  });
+}
+  });
+});
+
+</script>
+{% endblock %}

@@ -1,0 +1,180 @@
+/* Categories Page Styles */
+
+/* Page header + “New Category” button */
+.page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: var(--space-xl) var(--space-md) var(--space-lg);
+}
+
+.page-header h1 {
+        font-size: 1.75rem;
+        color: var(--color-text);
+}
+
+.page-header .btn {
+        background: var(--color-primary);
+        color: #fff;
+        padding: var(--space-xs) var(--space-md);
+        border-radius: var(--radius-sm);
+        font-size: var(--font-size-base);
+        transition: background .3s;
+}
+
+.page-header .btn:hover {
+        background: var(--color-primary-dark);
+}
+
+/* Table styling */
+.table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0 var(--space-md) var(--space-xl);
+        background: #fff;
+        box-shadow: var(--shadow-sm);
+}
+
+.table th,
+.table td {
+        padding: var(--space-sm) var(--space-md);
+        text-align: left;
+        border-bottom: 1px solid #eee;
+}
+
+.table th {
+        background: var(--color-bg);
+        font-weight: 600;
+}
+
+.table tbody tr:nth-child(even) {
+        background: #fafafa;
+}
+
+.table tbody tr:hover {
+        background: #f0f0f0;
+}
+
+/* Action buttons (edit/delete) */
+.btn-edit,
+.btn-delete {
+        background: none;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        margin-right: var(--space-xs);
+}
+
+.btn-edit i {
+        color: var(--color-primary);
+}
+
+.btn-delete i {
+        color: var(--color-error-text);
+}
+
+.btn-edit:hover i {
+        color: var(--color-primary-dark);
+}
+
+.btn-delete:hover i {
+        color: var(--color-error-border);
+}
+
+/* -------------------------------
+   Category Form Page Styles
+   ------------------------------- */
+
+/* Center the form in a nice card */
+#category-form {
+        max-width: 600px;
+        margin: var(--space-lg) auto var(--space-xl);
+        padding: var(--space-lg);
+        background: #fff;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-md);
+}
+
+/* Style labels, inputs and textarea */
+#category-form label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: var(--space-xs);
+}
+
+#category-form input[type="text"],
+#category-form textarea {
+        width: 100%;
+        padding: var(--space-sm);
+        border: 1px solid #ddd;
+        border-radius: var(--radius-sm);
+        margin-bottom: var(--space-md);
+        font-size: var(--font-size-base);
+}
+
+/* Big Save button with icon */
+#category-form .btn-submit {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        background: var(--color-primary);
+        padding: var(--space-sm);
+        border-radius: var(--radius-sm);
+        color: #fff;
+        font-size: var(--font-size-base);
+        transition: background .3s;
+        border: none;
+        cursor: pointer;
+}
+
+#category-form .btn-submit:hover {
+        background: var(--color-primary-dark);
+}
+
+/* add a floppy-disk icon before “Save” */
+#category-form .btn-submit::before {
+        content: "\f0c7";
+        font-family: "Font Awesome 5 Free";
+        font-weight: 900;
+        margin-right: var(--space-xs);
+}
+
+/* Page title above the form */
+h1 {
+        font-size: 1.75rem;
+        color: var(--color-text);
+        max-width: 600px;
+        margin: var(--space-lg) auto var(--space-md);
+        display: flex;
+        align-items: center;
+}
+
+/* add a folder icon before “New/Edit Category” */
+h1::before {
+        content: "\f07b";
+        font-family: "Font Awesome 5 Free";
+        font-weight: 900;
+        margin-right: var(--space-xs);
+        color: var(--color-primary);
+}
+
+#category-form input,
+#category-form select,
+#category-form textarea {
+        width: 100%;
+        padding: var(--space-sm);
+        border: 1px solid #ddd;
+        border-radius: var(--border-radius-sm);
+        margin-bottom: var(--space-md);
+        font-size: var(--font-size-base);
+        background: #fafafa;
+}
+
+/* Style checkboxes nicely */
+#category-form .form-check-input {
+        width: auto;
+        margin-right: var(--space-xs);
+        transform: scale(1.2);
+        vertical-align: middle;
+}

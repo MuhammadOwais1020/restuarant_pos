@@ -1,0 +1,349 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}POS System{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+    <link rel="stylesheet" href="{% static 'css/categories.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/menu_item.css' %}" />
+    <link rel="stylesheet" href="{% static 'css/reports.css' %}" />
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="{% static 'js/alert.js' %}"></script>
+
+    {% block extra_head %}{% endblock %}
+    <style>
+      :root {
+        /* Colors */
+        --color-primary: #ff5722;
+        --color-primary-dark: #e64a19;
+        --color-bg: #f4f7fa;
+        --color-text: #333;
+        --color-success-bg: #e6ffed;
+        --color-success-border: #27ae60;
+        --color-success-text: #27ae60;
+        --color-error-bg: #ffe6e6;
+        --color-error-border: #e74c3c;
+        --color-error-text: #e74c3c;
+
+        /* Spacing */
+        --space-xxs: 0.25rem;
+        --space-xs: 0.5rem;
+        --space-sm: 0.75rem;
+        --space-md: 1rem;
+        --space-lg: 1.5rem;
+        --space-xl: 2rem;
+
+        /* Typography */
+        --font-family: "Segoe UI", sans-serif;
+        --font-size-base: 1rem;
+        --font-size-sm: 0.875rem;
+
+        /* Misc */
+        --border-radius-sm: 0.25rem;
+        --border-radius: 0.5rem;
+        --border-radius-lg: 0.75rem;
+        --box-shadow-sm: 0 2px 5px rgba(0, 0, 0, 0.05);
+        --box-shadow-md: 0 2px 10px rgba(0, 0, 0, 0.1);
+        --box-shadow-lg: 0 4px 20px rgba(0, 0, 0, 0.1);
+      }
+
+      /* Reset & Base */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: var(--font-family);
+        background: var(--color-bg);
+        color: var(--color-text);
+
+        height: 100dvh;
+      }
+
+      body .dashboard-container {
+        background: url("/static/images/dashboard-bg.jpg") center/cover no-repeat;
+        height: 100dvh;
+      }
+
+      /* Dashboard background + overlay */
+      body .dashboard-container {
+        position: relative;
+        padding: var(--space-xl) var(--space-lg);
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Dark overlay */
+      body .dashboard-container::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.45);
+        z-index: 0;
+      }
+
+      a {
+        text-decoration: none;
+        color: inherit;
+      }
+
+      /* Centered Alerts */
+      .alert {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: var(--space-sm) var(--space-md);
+        border-radius: var(--border-radius);
+        display: flex;
+        align-items: center;
+        box-shadow: var(--box-shadow-md);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+
+      .alert.show {
+        opacity: 1;
+        pointer-events: all;
+      }
+
+      .alert i {
+        margin-right: var(--space-xs);
+      }
+
+      .alert.success {
+        background: var(--color-success-bg);
+        border: 1px solid var(--color-success-border);
+        color: var(--color-success-text);
+      }
+
+      .alert.error {
+        background: var(--color-error-bg);
+        border: 1px solid var(--color-error-border);
+        color: var(--color-error-text);
+      }
+
+      /* Login Screen */
+      .login-bg {
+        background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%);
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .login-container {
+        padding: var(--space-xl);
+        border-radius: var(--border-radius-lg);
+        width: 450px;
+        text-align: center;
+        position: relative;
+        background: #fff;
+        box-shadow: var(--box-shadow-lg);
+      }
+
+      .login-header .logo {
+        width: 60px;
+        margin-bottom: var(--space-xs);
+      }
+
+      .login-header h2 {
+        margin-bottom: var(--space-lg);
+        color: var(--color-primary);
+        font-weight: 600;
+      }
+
+      .login-form .input-group {
+        margin-bottom: var(--space-md);
+      }
+
+      .login-form input {
+        width: 100%;
+        padding: var(--space-sm);
+        border: 1px solid #ddd;
+        border-radius: var(--border-radius-sm);
+        font-size: var(--font-size-base);
+      }
+
+      .btn-submit {
+        width: 100%;
+        padding: var(--space-sm);
+        background: var(--color-primary);
+        border: none;
+        border-radius: var(--border-radius-sm);
+        color: #fff;
+        font-size: var(--font-size-base);
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      .btn-submit:hover {
+        background: var(--color-primary-dark);
+      }
+
+      .error-message {
+        color: var(--color-error-text);
+        margin-bottom: var(--space-sm);
+      }
+
+      .login-footer {
+        margin-top: var(--space-lg);
+        font-size: var(--font-size-sm);
+        color: #666;
+      }
+
+      .login-footer a {
+        color: var(--color-primary);
+      }
+
+      .social-icons {
+        margin-top: var(--space-sm);
+      }
+
+      .social-icons a {
+        margin: 0 var(--space-xs);
+        font-size: 1.2rem;
+        color: #555;
+        transition: color 0.3s;
+      }
+
+      .social-icons a:hover {
+        color: var(--color-primary);
+      }
+
+      /* Topbar */
+      .topbar {
+        background: #fff;
+        padding: var(--space-md) var(--space-xl);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: var(--box-shadow-sm);
+      }
+
+      .topbar .logo {
+        font-size: 1.5rem;
+        color: var(--color-primary);
+      }
+
+      .topbar .user-menu a {
+        margin-left: var(--space-xs);
+      }
+
+      /* Dashboard Grid */
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--space-lg);
+        padding: var(--space-xl);
+      }
+
+      .card {
+        background: #fff;
+        padding: var(--space-md);
+        border-radius: var(--border-radius);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        box-shadow: var(--box-shadow-md);
+        cursor: pointer;
+        transition: transform 0.2s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-5px);
+      }
+
+      .card h3 {
+        margin-top: var(--space-xs);
+        color: var(--color-text);
+      }
+
+      /* Main navigation bar */
+      .main-nav {
+        background: #fff;
+        display: flex;
+        justify-content: center;
+        gap: var(--space-lg);
+        padding: var(--space-sm) 0;
+        box-shadow: var(--shadow-sm);
+        border-bottom: 1px solid #e0e0e0;
+      }
+
+      .main-nav a {
+        display: inline-flex;
+        align-items: center;
+        font-size: var(--font-size-base);
+        color: var(--color-text);
+        padding: var(--space-xs) var(--space-sm);
+        border-radius: var(--radius-sm);
+        transition: background 0.2s, color 0.2s;
+      }
+
+      .main-nav a i {
+        margin-right: var(--space-xs);
+        font-size: 1.1rem;
+      }
+
+      .main-nav a:hover,
+      .main-nav a:focus {
+        background: var(--color-primary);
+        color: #fff;
+      }
+
+      .main-nav a.active {
+        background: var(--color-primary-dark);
+        color: #fff;
+      }
+
+      /* Bring cards above the overlay */
+      .dashboard-grid .card {
+        position: relative;
+        z-index: 1;
+      }
+
+      /* (Optional) Lighten card backgrounds for contrast */
+      .dashboard-grid .card {
+        background: rgba(255, 255, 255, 0.85);
+        width: 400px;
+        height: 150px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="logo"><i class="fa fa-hamburger"></i> BarkatPOS</div>
+      <div class="user-menu">
+        <span>{{ request.user.username }}</span>
+        <a href="{% url 'logout' %}"><i class="fa fa-sign-out-alt"></i></a>
+      </div>
+    </header>
+
+    <nav class="main-nav">
+      <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"> <i class="fa fa-home"></i> Dashboard </a>
+      <a href="{% url 'category_list' %}" class="{% if request.resolver_match.url_name == 'category_list' %}active{% endif %}"> <i class="fa fa-folder"></i> Categories </a>
+      <a href="{% url 'menuitem_list' %}" class="{% if request.resolver_match.url_name == 'menuitem_list' %}active{% endif %}"> <i class="fa fa-tags"></i> Menu Items </a>
+      <a href="{% url 'deal_list' %}" class="{% if request.resolver_match.url_name == 'deal_list' %}active{% endif %}"> <i class="fa fa-tag"></i> Deals </a>
+      <a href="{% url 'order_list' %}" class="{% if request.resolver_match.url_name == 'order_list' %}active{% endif %}"> <i class="fa fa-receipt"></i> Orders </a>
+      <a href="/tables/" class="{% if request.resolver_match.url_name == 'table_list' %}active{% endif %}"> <i class="fa fa-table"></i> Tables </a>
+      <a href="/reports/" class="{% if request.resolver_match.url_name == 'reports' %}active{% endif %}"> <i class="fa fa-chart-line"></i> Reports </a>
+    </nav>
+
+    <main>{% block content %}{% endblock %}</main>
+  </body>
+</html>

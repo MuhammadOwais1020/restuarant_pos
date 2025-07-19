@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Menu Items</h1>
+  <a href="{% url 'menuitem_create' %}" class="btn"><i class="fa fa-plus"></i> New Item</a>
+</div>
+<form class="search-bar">
+  <input name="q" placeholder="Search items..." value="{{ request.GET.q }}">
+  <button type="submit"><i class="fa fa-search"></i></button>
+</form>
+<table class="table">
+  <thead><tr><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Avail.</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for item in items %}
+    <tr id="item-{{ item.pk }}">
+        <td>
+      {% if item.image %}
+        <img src="{{ item.image.url }}" width="50">
+      {% else %}
+        <span>No Image</span>
+      {% endif %}
+    </td>
+      <td>{{ item.name }}</td>
+      <td>{{ item.category.name }}</td>
+      <td>{{ item.price }}</td>
+      <td>{{ item.is_available|yesno:'Yes,No' }}</td>
+      <td>
+        <a href="{% url 'menuitem_detail' item.pk %}"><i class="fa fa-eye"></i></a>
+        <a href="{% url 'menuitem_edit' item.pk %}"><i class="fa fa-edit"></i></a>
+        <button class="btn-delete" data-url="{% url 'menuitem_delete' item.pk %}"><i class="fa fa-trash"></i></button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6">No items.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<script>
+$('.btn-delete').click(function(){
+  let url=$(this).data('url'), row='#item-'+url.split('/').slice(-2)[0];
+  if(confirm('Delete?')){ $.post(url, {}, ()=>{showAlert('success','Deleted');$(row).remove();}); }
+});
+</script>
+{% endblock %}
