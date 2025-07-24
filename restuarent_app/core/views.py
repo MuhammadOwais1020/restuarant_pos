@@ -449,12 +449,18 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         if status_value == "paid":
             try:
-                # Kitchen Token
-                token_data = build_token_bytes(order)
-                send_to_printer(token_data)
-                # Bill/Invoice
-                bill_data = build_bill_bytes(order)
-                send_to_printer(bill_data)
+                ps = PrintStatus.objects.first()
+                bill_enabled  = ps.bill  if ps else False
+                token_enabled = ps.token if ps else False
+
+
+                if token_enabled:
+                    token_data = build_token_bytes(order)
+                    send_to_printer(token_data)
+                if bill_enabled:
+                    bill_data = build_bill_bytes(order)
+                    send_to_printer(bill_data)
+
                 # Free table
                 if table_id:
                     tbl = Table.objects.get(pk=table_id)
@@ -466,14 +472,30 @@ class OrderCreateView(LoginRequiredMixin, View):
         return JsonResponse({"message": "Order Created", "order_id": order.id})
 
 
+# core/views.py
+
+import json
+from django.shortcuts      import render, get_object_or_404
+from django.http           import JsonResponse, HttpResponseBadRequest
+from django.views          import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+from .models import (
+    Category, MenuItem, Deal,
+    Table, Order, OrderItem, PrintStatus
+)
+from .printing import send_to_printer
+
+
 class OrderUpdateView(LoginRequiredMixin, View):
     """
-    GET:  Render “Edit Order” form pre-populated + table-selector annotated.
-    POST: Accept JSON (with table_id), update Order + OrderItems, print if paid.
+    GET:  Render “Edit Order” form pre-populated + table‑selector annotated.
+    POST: Accept JSON (with table_id), diff OrderItems, print if paid.
     """
 
     def get(self, request, pk):
         order = get_object_or_404(Order, pk=pk)
+        # … your existing GET logic unchanged …
         categories = Category.objects.prefetch_related('items').order_by('name')
 
         # Serialize menu items
@@ -507,6 +529,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
             })
         all_deals_json = json.dumps(deals_list)
 
+        # Existing items for JS
         existing_items = []
         for oi in order.items.all():
             if oi.menu_item_id:
@@ -531,18 +554,19 @@ class OrderUpdateView(LoginRequiredMixin, View):
         tables = list(Table.objects.all().order_by("number"))
         for t in tables:
             pending = Order.objects.filter(table=t, status="pending").first()
-            total = sum(oi.quantity * oi.unit_price for oi in (pending.items.all() if pending else []))
+            total   = sum(oi.quantity * oi.unit_price for oi in (pending.items.all() if pending else []))
             t.current_order_total = f"{total:.2f}"
-            t.has_items = (total > 0)
+            t.has_items           = (total > 0)
 
         return render(request, "orders/order_form.html", {
-            "categories": categories,
+            "categories":          categories,
             "all_menu_items_json": all_menu_items_json,
-            "all_deals_json": all_deals_json,
+            "all_deals_json":      all_deals_json,
             "existing_items_json": existing_items_json,
-            "order": order,
-            "tables": tables,
+            "order":               order,
+            "tables":              tables,
         })
+
 
     def post(self, request, pk):
         order = get_object_or_404(Order, pk=pk)
@@ -551,63 +575,83 @@ class OrderUpdateView(LoginRequiredMixin, View):
         except json.JSONDecodeError:
             return HttpResponseBadRequest("Invalid JSON")
 
-        discount       = data.get("discount", 0) or 0
-        tax_percentage = data.get("tax_percentage", 0) or 0
-        service_charge = data.get("service_charge", 0) or 0
-        items          = data.get("items", [])
-        action         = data.get("action", "update")
-        table_id       = data.get("table_id")
-
-        order.discount       = discount
-        order.tax_percentage = tax_percentage
-        order.service_charge = service_charge
-        order.table_id       = table_id
+        # 1) Update order fields
+        order.discount       = data.get("discount", 0) or 0
+        order.tax_percentage = data.get("tax_percentage", 0) or 0
+        order.service_charge = data.get("service_charge", 0) or 0
+        order.table_id       = data.get("table_id")
+        action               = data.get("action", "update")
         order.status         = "paid" if action == "paid" else "pending"
         order.save()
 
-        if table_id is not None:
-            tbl = Table.objects.get(pk=table_id)
+        # 2) Table occupancy
+        if order.table_id is not None:
+            tbl = Table.objects.get(pk=order.table_id)
             tbl.is_occupied = (order.status != "paid")
             tbl.save()
 
-        order.items.all().delete()
-        for it in items:
+        # 3) Diff algorithm for OrderItems
+        incoming = data.get("items", [])
+        # build map of existing items by (menu_id, deal_id)
+        existing_map = {
+            (oi.menu_item_id, oi.deal_id): oi
+            for oi in order.items.all()
+        }
+
+        # process incoming items
+        for it in incoming:
             if it.get("type") == "menu":
+                key = (it["menu_item_id"], None)
+                m_id, d_id = it["menu_item_id"], None
+            else:
+                key = (None, it["deal_id"])
+                m_id, d_id = None, it["deal_id"]
+
+            if key in existing_map:
+                # update existing
+                oi = existing_map.pop(key)
+                oi.quantity   = it["quantity"]
+                oi.unit_price = it["unit_price"]
+                oi.save()   # preserves token_printed
+            else:
+                # create brand‑new → token_printed defaults to False
                 OrderItem.objects.create(
                     order=order,
-                    menu_item_id=it["menu_item_id"],
-                    quantity=it["quantity"],
-                    unit_price=it["unit_price"]
-                )
-            elif it.get("type") == "deal":
-                OrderItem.objects.create(
-                    order=order,
-                    deal_id=it["deal_id"],
+                    menu_item_id=m_id,
+                    deal_id=d_id,
                     quantity=it["quantity"],
                     unit_price=it["unit_price"]
                 )
 
+        # anything still in existing_map was removed by user → delete
+        for oi in existing_map.values():
+            oi.delete()
+
+        # 4) If marking paid, print receipts
         if order.status == "paid":
             try:
-                ps = PrintStatus.objects.first()
-                bill_enabled  = ps.bill  if ps else False
-                token_enabled = ps.token if ps else False
+                ps           = PrintStatus.objects.first()
+                token_on     = ps.token if ps else False
+                bill_on      = ps.bill  if ps else False
 
-                if token_enabled:
+                if token_on:
                     token_data = build_token_bytes(order)
                     send_to_printer(token_data)
-                if bill_enabled:
-                    bill_data = build_bill_bytes(order)
+                if bill_on:
+                    bill_data  = build_bill_bytes(order)
                     send_to_printer(bill_data)
 
-                if table_id is not None:
-                    tbl = Table.objects.get(pk=table_id)
+                # free the table
+                if order.table_id is not None:
+                    tbl = Table.objects.get(pk=order.table_id)
                     tbl.is_occupied = False
                     tbl.save()
+
             except Exception as e:
                 return JsonResponse({"error": f"Print failed: {e}"}, status=500)
 
         return JsonResponse({"message": "Order Updated", "order_id": order.id})
+
 
 
 class OrderDetailView(LoginRequiredMixin, DetailView):
@@ -622,15 +666,8 @@ class OrderDeleteView(LoginRequiredMixin, AjaxableResponseMixin, DeleteView):
     success_url = reverse_lazy('order_list')
 
 
-# core/views.py  (continued)
-
-# core/views.py  (or wherever you put your ESC/POS‐builders)
-
-# core/views.py (or wherever your ESC/POS builders live)
 
 from decimal import Decimal
-
-# core/your_print_module.py
 
 import os
 from django.conf import settings
@@ -665,9 +702,11 @@ def build_token_bytes(order):
 
     # ─── Token number, bold, slightly bigger ─────────────────────────────
     token_str = str(order.token_number).encode("ascii")
+    
     lines.append(esc + b"\x61" + b"\x01")   # center
     lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x10 → double width, normal height
     lines.append(b"TOKEN #: " + token_str + b"\n\n")
+    
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
 
     # ─── Date / Time ──────────────────────────────────────────────────────
@@ -677,13 +716,14 @@ def build_token_bytes(order):
     lines.append(b"-" * 32 + b"\n")         # 32-char full width separator
 
     # ─── Order Items List (left name, right qty) ─────────────────────────
-    for oi in order.items.all():
+    new_items = order.items.filter(token_printed=False)
+    for oi in new_items:
         name = (oi.menu_item.name if oi.menu_item else oi.deal.name)[:20]
         name_field = name.ljust(20).encode("ascii", "ignore")
         qty_bytes = str(oi.quantity).rjust(3).encode("ascii")
         lines.append(name_field + b"  x" + qty_bytes + b"\n")
 
-    lines.append(b"\n\n\n\n\n\n\n\n")
+    lines.append(b"\n\n")
     # ─── Feed + Cut ────────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")    # full cut
@@ -1214,6 +1254,56 @@ class TableUpdateView(UpdateView):
     success_url = reverse_lazy('table_list')
 
 
+
+def build_token_bytes_for_deltas(order, items_with_delta):
+    """
+    Build an ESC/POS payload containing only the given OrderItem queryset.
+    """
+    esc = b"\x1B"
+    gs  = b"\x1D"
+    lines = []
+    
+    # ─── Restaurant name, larger/bold ────────────────────────────────────
+    lines.append(esc + b"\x61" + b"\x01")   # center alignment
+    lines.append(esc + b"\x21" + b"\x30")   # double height & width
+    lines.append(b"MR FOOD\n")
+    lines.append(esc + b"\x21" + b"\x00")   # back to normal
+    lines.append(b"\n")
+
+    # ─── Header “KITCHEN TOKEN” ───────────────────────────────────────────
+    lines.append(esc + b"\x61" + b"\x01")   # center
+    lines.append(b"KITCHEN TOKEN\n\n")
+
+    # ─── Token number, bold, slightly bigger ─────────────────────────────
+    token_str = str(order.token_number).encode("ascii")
+    table_number = str(order.table.number).encode("ascii")
+    lines.append(esc + b"\x61" + b"\x01")   # center
+    lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x10 → double width, normal height
+    lines.append(b"TOKEN #: " + token_str + b"\n\n")
+    lines.append(b"Table #: "+ table_number + b"\n\n")
+    lines.append(esc + b"\x21" + b"\x00")   # back to normal
+
+    # ─── Date / Time ──────────────────────────────────────────────────────
+    now_str = order.created_at.strftime("%Y-%m-%d %H:%M").encode("ascii")
+    lines.append(esc + b"\x61" + b"\x00")   # left align
+    lines.append(b"Date: " + now_str + b"\n")
+    lines.append(b"-" * 32 + b"\n")         # 32-char full width separator
+
+    # ─── Only the new items ─────────────────────────────────────────────
+    for oi, delta in items_with_delta:
+        # truncate name to 20 chars
+        name = (oi.menu_item.name if oi.menu_item else oi.deal.name)[:20]
+        name_field = name.ljust(20).encode("ascii", "ignore")
+        qty_bytes  = str(delta).rjust(3).encode("ascii")
+        lines.append(name_field + b"  x" + qty_bytes + b"\n")
+
+    lines.append(b"\n\n\n\n")
+    # ─── feed + cut ─────────────────────────────────────────────────────
+    lines.append(b"\n" * 4)
+    lines.append(gs + b"\x56" + b"\x00")    # full cut
+
+    return b"".join(lines)
+
 import json
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
@@ -1261,6 +1351,21 @@ class TableSwitchView(LoginRequiredMixin, View):
         table.is_occupied = True
         table.save()
 
+        # ─── NEW: fetch only items not yet printed ──────────────────────
+        items_to_print = []
+        for oi in order.items.all():
+            delta = oi.quantity - oi.printed_quantity
+            if delta > 0:
+                items_to_print.append((oi, delta))
+
+        if items_to_print:
+            payload = build_token_bytes_for_deltas(order, items_to_print)
+            send_to_printer(payload)
+            # mark them as “now fully printed”
+            for oi, _ in items_to_print:
+                oi.printed_quantity = oi.quantity
+                oi.save(update_fields=['printed_quantity'])
+        
         # Build items array
         items_data = []
         for oi in order.items.all():
