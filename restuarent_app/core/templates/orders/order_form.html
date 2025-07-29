@@ -670,7 +670,23 @@
 
     <!-- BOTTOM 20%: Action Buttons (Reset / Create/Update / New / Paid) -->
     <div class="right-bottom-actions">
-      <div class="toggle-actions">
+      <div class="waiter-selector" style="padding:1rem; background:#fff; border-bottom:1px solid #e0e0e0;">
+      <label for="waiter-select"><strong>Waiter:</strong></label>
+      <select id="waiter-select" style="margin-left:.5rem; padding:.25rem;">
+        <option value="">— Unassigned —</option>
+      </select>
+
+      <div class="toggle-source">
+            <label class="toggle-switch-container" for="home-delivery">
+              <span>Home Delivery Order:</span>
+             <label class="switch">
+              <input type="checkbox" id="home-delivery" name="home-delivery" />
+            <span class="slider"></span>  
+            </label>
+            </label>
+      </div>
+      </div>
+      <div class="toggle-actions" style="display:none">
       <div class="toggle-source">
             <label class="toggle-switch-container" for="food-panda-source">
               <span>Food Panda Order:</span>
@@ -725,9 +741,13 @@
 <script id="existing-items-data" type="application/json">
   {{ existing_items_json|default:"[]"|safe }}
 </script>
+<script id="waiters-data" type="application/json">
+  {{ waiters_json|safe }}
+</script>
 
 <script>
   const foodPandaCheckbox = document.getElementById("food-panda-source");
+  const homeDelivery = document.getElementById("home-delivery");
   // ====== CSRF token helper ======
   function getCookie(name) {
     let cookieValue = null;
@@ -982,6 +1002,22 @@ function formatPrice(price) {
     let selectedItems = JSON.parse(
       document.getElementById('existing-items-data').textContent
     );
+
+// ── Waiters dropdown ───────────────────────
+const allWaiters = JSON.parse(
+  document.getElementById('waiters-data').textContent
+);
+const waiterSelect = document.getElementById('waiter-select');
+allWaiters.forEach(w => {
+  const opt = document.createElement('option');
+  opt.value = w.id;
+  opt.text  = w.name;
+  waiterSelect.add(opt);
+});
+// If we’re editing an order, pre‑select its waiter:
+{% if order and order.waiter_id %}
+  waiterSelect.value = "{{ order.waiter_id }}";
+{% endif %}
 
 
     // Helper: format a number to two decimals
@@ -1485,6 +1521,9 @@ function formatPrice(price) {
   // ─ Include table_id in every save/paid payload ─
   function buildPayload(action) {
     const source = foodPandaCheckbox.checked ? "food_panda" : "walk_in";
+    const isHomeDelivery= homeDelivery.checked ? "yes" : "no";
+    console.log("IS HOME DELIVERY: "+ isHomeDelivery);
+    console.log("IS Food Panda: "+ source);
     const base = {
       discount: parseFloat(document.getElementById('discount').value)||0,
       tax_percentage: parseFloat(document.getElementById('tax-perc').value)||0,
@@ -1497,17 +1536,17 @@ function formatPrice(price) {
         unit_price: it.unit_price
       })),
       action: action,
-      source: source
     };
+    base.source = source;
     base.table_id = selectedTableId;
+    base.waiter_id = waiterSelect.value || null;
+    base.isHomeDelivery = isHomeDelivery;
     return base;
   }
 
-  // then replace your fetch() calls in Create/Update/Paid to use:
-  //   const payload = buildPayload('create'|'update'|'paid');
-  //   body: JSON.stringify(payload);
-
-
     });
 </script>
+
+
+
 {% endblock %}

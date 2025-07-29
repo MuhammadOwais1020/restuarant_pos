@@ -348,11 +348,14 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 
 from .models import Category, MenuItem, Deal, Table, Order, OrderItem, PrintStatus
 from .printing import send_to_printer
+from .models import Waiter
 
 class OrderCreateView(LoginRequiredMixin, View):
 
     def get(self, request):
         categories = Category.objects.prefetch_related('items').order_by('name')
+        all_waiters = Waiter.objects.order_by('name').values('id','name')
+        waiters_json = json.dumps(list(all_waiters))
 
         # Serialize menu items
         all_menu_items = MenuItem.objects.filter(is_available=True).select_related('category')
@@ -404,6 +407,7 @@ class OrderCreateView(LoginRequiredMixin, View):
             "existing_items_json": existing_items_json,
             "order": None,
             "tables": tables,
+            "waiters_json": waiters_json,
         })
 
     def post(self, request):
@@ -419,9 +423,11 @@ class OrderCreateView(LoginRequiredMixin, View):
         items = data.get("items", [])
         action = data.get("action", "create")
         table_id = data.get("table_id")
-        is_food_panda = data.get("source", False)
+        is_food_panda = data.get("source")
+        waiter_id = data.get("waiter_id") or None
+        isHomeDelivery = data.get("isHomeDelivery") or None
 
-        source_value = "food_panda" if is_food_panda else "walk_in"
+        source_value =  is_food_panda
 
         status_value = "paid" if action == "paid" else "pending"
 
@@ -432,7 +438,9 @@ class OrderCreateView(LoginRequiredMixin, View):
             tax_percentage=tax_percentage,
             service_charge=service_charge,
             status=status_value,
-            source=source_value 
+            source=source_value,
+            waiter_id=waiter_id,
+            isHomeDelivery = isHomeDelivery,
         )
 
         if table_id and status_value != "paid":
@@ -443,7 +451,7 @@ class OrderCreateView(LoginRequiredMixin, View):
         for it in items:
             unit_price = it["unit_price"]
             # Check if the source is "Food Panda"
-            if is_food_panda:
+            if is_food_panda == "food_panda":
                 if it.get("type") == "menu":
                     menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
                     unit_price = menu_item.food_panda_price if menu_item.food_panda_price else menu_item.price
@@ -521,6 +529,8 @@ class OrderUpdateView(LoginRequiredMixin, View):
         order = get_object_or_404(Order, pk=pk)
         # … your existing GET logic unchanged …
         categories = Category.objects.prefetch_related('items').order_by('name')
+        all_waiters = Waiter.objects.order_by('name').values('id','name')
+        waiters_json = json.dumps(list(all_waiters))
 
         # Serialize menu items
         all_menu_items = MenuItem.objects.filter(is_available=True).select_related('category')
@@ -591,6 +601,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
             "existing_items_json": existing_items_json,
             "order":               order,
             "tables":              tables,
+            "waiters_json": waiters_json,
         })
 
 
@@ -602,12 +613,16 @@ class OrderUpdateView(LoginRequiredMixin, View):
             return HttpResponseBadRequest("Invalid JSON")
 
         # 1) Update order fields
+        waiter_id = data.get("waiter_id") or None
+        isHomeDelivery = data.get("isHomeDelivery") or None
         order.discount       = data.get("discount", 0) or 0
         order.tax_percentage = data.get("tax_percentage", 0) or 0
         order.service_charge = data.get("service_charge", 0) or 0
         order.table_id       = data.get("table_id")
         action               = data.get("action", "update")
         order.status         = "paid" if action == "paid" else "pending"
+        order.waiter_id = waiter_id
+        order.isHomeDelivery = isHomeDelivery
         order.save()
 
         # 2) Table occupancy
@@ -699,7 +714,7 @@ import os
 from django.conf import settings
 from .escpos_logo import logo_to_escpos_bytes
 
-def build_token_bytes(order, is_food_panda = False):
+def build_token_bytes(order, is_food_panda = "walk_in"):
     esc = b"\x1B"
     gs  = b"\x1D"
     lines = []
@@ -726,11 +741,12 @@ def build_token_bytes(order, is_food_panda = False):
     lines.append(esc + b"\x61" + b"\x01")   # center
     lines.append(b"KITCHEN TOKEN\n\n")
 
-    if is_food_panda:
+    if is_food_panda == "food_panda":
         lines.append(esc + b"\x61" + b"\x01")   # center
         lines.append(b"FOOD PANDA Order\n\n")
     # ─── Token number, bold, slightly bigger ─────────────────────────────
     token_str = str(order.token_number).encode("ascii")
+
     
     lines.append(esc + b"\x61" + b"\x01")   # center
     lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x10 → double width, normal height
@@ -742,6 +758,7 @@ def build_token_bytes(order, is_food_panda = False):
     now_str = order.created_at.strftime("%Y-%m-%d %H:%M").encode("ascii")
     lines.append(esc + b"\x61" + b"\x00")   # left align
     lines.append(b"Date: " + now_str + b"\n")
+    lines.append(b"Waiter: " + order.waiter.name + b"\n")
     lines.append(b"-" * 32 + b"\n")         # 32-char full width separator
 
 
@@ -853,7 +870,7 @@ def build_token_bytes(order, is_food_panda = False):
 #     return b"".join(lines)
 
 
-def build_bill_bytes(order, is_food_panda = False):
+def build_bill_bytes(order, is_food_panda = "walk_in"):
     esc = b"\x1B"
     gs  = b"\x1D"
     lines = []
@@ -878,7 +895,7 @@ def build_bill_bytes(order, is_food_panda = False):
     lines.append(esc + b"\x21" + b"\x00")
     lines.append(b"\n")
     
-    if is_food_panda:
+    if is_food_panda == "food_panda":
         lines.append(esc + b"\x61" + b"\x01")   # center
         lines.append(b"FOOD PANDA Order\n\n")
     

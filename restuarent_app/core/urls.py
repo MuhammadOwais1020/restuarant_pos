@@ -164,7 +164,7 @@ from .views import (
     # … your other imports …
 )
 
-urlpatterns = [
+urlpatterns += [
     # … your existing patterns …
 
     # Waiters
