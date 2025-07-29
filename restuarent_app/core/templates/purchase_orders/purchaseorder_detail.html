@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-box"></i> PO #{{ order.id }}</h1>
+  <a href="{% url 'purchase_order_list' %}" class="btn"><i class="fa fa-arrow-left"></i> Back</a>
+</div>
+
+<p><strong>Supplier:</strong> {{ order.supplier.name }}</p>
+<p><strong>Date:</strong> {{ order.created_at|date:"Y-m-d H:i" }}</p>
+<p><strong>Status:</strong> {{ order.get_status_display }}</p>
+<p><strong>Total Cost:</strong> {{ order.total_cost }}</p>
+
+{% if order.status == 'pending' %}
+  <button id="btn-receive" class="btn">
+    <i class="fa fa-check"></i> Mark as Received
+  </button>
+{% endif %}
+
+<h3>Items</h3>
+<table class="table">
+  <thead><tr>
+    <th>Material</th><th>Qty</th><th>Unit Price</th><th>Line Total</th>
+  </tr></thead>
+  <tbody>
+    {% for pi in order.items.all %}
+    <tr>
+      <td>{{ pi.raw_material.name }}</td>
+      <td>{{ pi.quantity }} {{ pi.raw_material.unit }}</td>
+      <td>{{ pi.unit_price }}</td>
+      <td>{{ pi.quantity|floatformat:2|add:"0.00"|floatformat:2|floatformat:2|floatformat:2|add:"0.00"|floatformat:2 }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3>Stock‑in Transactions</h3>
+<ul>
+  {% for tx in transactions %}
+    <li>
+      {{ tx.timestamp|date:"Y-m-d H:i" }} – 
+      {{ tx.get_transaction_type_display }}: {{ tx.quantity }} {{ order.items.first.raw_material.unit }}
+    </li>
+  {% empty %}
+    <li>No transactions yet.</li>
+  {% endfor %}
+</ul>
+
+<script>
+function getCookie(n){let v=document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');return v?v.pop():'';}
+$.ajaxSetup({ headers:{ 'X-CSRFToken': getCookie('csrftoken') } });
+
+$('#btn-receive').click(function(){
+  if(!confirm('Mark this order as received?')) return;
+  const url = "{% url 'purchase_order_receive' order.pk %}";
+  $.post(url, {}, () => {
+    showAlert('success','Order received');
+    setTimeout(()=>location.reload(),300);
+  });
+});
+</script>
+{% endblock %}

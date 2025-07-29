@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% block content %}
+  {% if view.object %}
+    <h1><i class="fa fa-edit"></i> Edit Purchase Order</h1>
+  {% else %}
+    <h1><i class="fa fa-plus"></i> New Purchase Order</h1>
+  {% endif %}
+
+  <form id="po-form" method="post">
+    {% csrf_token %}
+    <div>
+      <label for="id_supplier">Supplier</label>
+      {{ form.supplier }}
+    </div>
+
+    <h3>Line Items</h3>
+    <table class="table">
+      <thead><tr>
+        <th>#</th><th>Material</th><th>Qty</th><th>Unit Price</th><th>Total</th><th>Action</th>
+      </tr></thead>
+      <tbody id="po-items-container"></tbody>
+    </table>
+    <button type="button" id="add-item-btn" class="btn">
+      <i class="fa fa-plus"></i> Add Material
+    </button>
+
+    <input type="hidden" name="po_items_json" id="id_po_items_json">
+    <button type="submit" class="btn-submit" style="margin-top:1rem;">
+      <i class="fa fa-save"></i> Save Order
+    </button>
+  </form>
+
+  <script>
+    const materials = JSON.parse('{{ raw_materials_json|safe }}');
+    let lines = JSON.parse('{{ initial_po_items|safe }}');
+
+    function fmt(x){return parseFloat(x).toFixed(2);}
+    function render(){
+      const tbody = $('#po-items-container').empty();
+      lines.forEach((it,i)=>{
+        const mat = materials.find(m=>m.pk===it.raw_material_id);
+        const unit = mat?mat.unit:'';
+        const total = fmt(it.quantity*it.unit_price);
+        const row = $(`
+          <tr data-i="${i}">
+            <td>${i+1}</td>
+            <td>
+              <select class="sel-mat">${materials.map(m=>
+                `<option value="${m.pk}" ${m.pk===it.raw_material_id?'selected':''}>
+                  ${m.name} (${m.unit})
+                </option>`).join('')}
+              </select>
+            </td>
+            <td><input type="number" class="inp-qty" min="0.01" step="0.01" value="${it.quantity}"></td>
+            <td><input type="number" class="inp-up" min="0" step="0.01" value="${it.unit_price}"></td>
+            <td class="td-total">${total}</td>
+            <td>
+              <button type="button" class="btn-remove">
+                <i class="fa fa-trash"></i>
+              </button>
+            </td>
+          </tr>`);
+        tbody.append(row);
+      });
+    }
+
+    $('#add-item-btn').click(()=>{
+      lines.push({ raw_material_id: materials[0].pk, quantity:1, unit_price:0 });
+      render();
+    });
+
+    $('#po-items-container')
+      .on('click','.btn-remove',function(){
+        const i=+$(this).closest('tr').data('i');
+        lines.splice(i,1);render();
+      })
+      .on('change','.sel-mat,.inp-qty,.inp-up',function(){
+        const row=$(this).closest('tr'),i=+row.data('i');
+        lines[i].raw_material_id = +row.find('.sel-mat').val();
+        lines[i].quantity        = +row.find('.inp-qty').val();
+        lines[i].unit_price      = +row.find('.inp-up').val();
+        row.find('.td-total').text(fmt(lines[i].quantity*lines[i].unit_price));
+      });
+
+    $('#po-form').submit(function(e){
+      e.preventDefault();
+      $('#id_po_items_json').val(JSON.stringify(lines));
+      const fd=new FormData(this);
+      $.ajax({
+        url:window.location.href,method:'POST',
+        data:fd,processData:false,contentType:false,
+        success:()=>{ showAlert('success','Saved'); 
+                     setTimeout(()=>location.href="{% url 'purchase_order_list' %}",500); },
+        error:(xhr)=>{ Object.values(xhr.responseJSON||{}).flat()
+                       .forEach(msg=>showAlert('error',msg)); }
+      });
+    });
+
+    $(render);
+  </script>
+{% endblock %}

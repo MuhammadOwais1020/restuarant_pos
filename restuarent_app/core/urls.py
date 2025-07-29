@@ -18,7 +18,13 @@ from .escpos_test import(
         simple_win32print_test
 )
 
+from .views import (
+    SupplierListView, SupplierCreateView,
+    SupplierDetailView, SupplierUpdateView, SupplierDeleteView,
+)
+
 urlpatterns = [
+
     path(
         "",
         RedirectView.as_view(pattern_name="login", permanent=False),
@@ -79,4 +85,92 @@ urlpatterns = [
       name='table_switch'
     ),
     
+]
+
+urlpatterns += [
+    # Suppliers CRUD
+    path('suppliers/', SupplierListView.as_view(), name='supplier_list'),
+    path('suppliers/create/', SupplierCreateView.as_view(), name='supplier_create'),
+    path('suppliers/<int:pk>/', SupplierDetailView.as_view(), name='supplier_detail'),
+    path('suppliers/<int:pk>/edit/', SupplierUpdateView.as_view(), name='supplier_edit'),
+    path('suppliers/<int:pk>/delete/', SupplierDeleteView.as_view(), name='supplier_delete'),
+]
+
+
+from .views import (
+    # … other imports …
+    RawMaterialListView, RawMaterialCreateView,
+    RawMaterialDetailView, RawMaterialUpdateView, RawMaterialDeleteView,
+)
+
+urlpatterns += [
+    # Raw Materials CRUD
+    path('raw-materials/', RawMaterialListView.as_view(), name='raw_material_list'),
+    path('raw-materials/create/', RawMaterialCreateView.as_view(), name='raw_material_create'),
+    path('raw-materials/<int:pk>/', RawMaterialDetailView.as_view(), name='raw_material_detail'),
+    path('raw-materials/<int:pk>/edit/', RawMaterialUpdateView.as_view(), name='raw_material_edit'),
+    path('raw-materials/<int:pk>/delete/', RawMaterialDeleteView.as_view(), name='raw_material_delete'),
+]
+
+
+from .views import (
+    # … other imports …
+    PurchaseOrderListView,
+    PurchaseOrderCreateView,
+    PurchaseOrderDetailView,
+    PurchaseOrderUpdateView,
+    PurchaseOrderDeleteView,
+    purchase_order_receive,
+)
+
+urlpatterns += [
+    # Purchase Orders CRUD
+    path('purchase-orders/', PurchaseOrderListView.as_view(), name='purchase_order_list'),
+    path('purchase-orders/create/', PurchaseOrderCreateView.as_view(), name='purchase_order_create'),
+    path('purchase-orders/<int:pk>/', PurchaseOrderDetailView.as_view(), name='purchase_order_detail'),
+    path('purchase-orders/<int:pk>/edit/', PurchaseOrderUpdateView.as_view(), name='purchase_order_edit'),
+    path('purchase-orders/<int:pk>/delete/', PurchaseOrderDeleteView.as_view(), name='purchase_order_delete'),
+    # mark received
+    path('purchase-orders/<int:pk>/receive/', purchase_order_receive, name='purchase_order_receive'),
+]
+
+from .views import CostReportView
+
+urlpatterns += [
+    # …
+    path('cost-report/', CostReportView.as_view(), name='cost_report'),
+]
+
+from .views import (
+    RecipeListView,
+    RecipeCreateView, RecipeDetailView,
+    RecipeUpdateView, RecipeDeleteView,
+)
+
+urlpatterns += [
+    # Recipes CRUD
+    path('recipes/',         RecipeListView.as_view(),   name='recipe_list'),
+    path('recipes/create/',  RecipeCreateView.as_view(), name='recipe_create'),
+    path('recipes/<int:pk>/',RecipeDetailView.as_view(), name='recipe_detail'),
+    path('recipes/<int:pk>/edit/',  RecipeUpdateView.as_view(), name='recipe_edit'),
+    path('recipes/<int:pk>/delete/',RecipeDeleteView.as_view(), name='recipe_delete'),
+]
+
+
+from django.urls import path
+from .views import (
+    WaiterListView, WaiterCreateView, WaiterDetailView,
+    WaiterUpdateView, WaiterDeleteView,
+    # … your other imports …
+)
+
+urlpatterns = [
+    # … your existing patterns …
+
+    # Waiters
+    path('waiters/', WaiterListView.as_view(),     name='waiter_list'),
+    path('waiters/create/', WaiterCreateView.as_view(), name='waiter_create'),
+    path('waiters/<int:pk>/', WaiterDetailView.as_view(), name='waiter_detail'),
+    path('waiters/<int:pk>/edit/',  WaiterUpdateView.as_view(), name='waiter_edit'),
+    path('waiters/<int:pk>/delete/',WaiterDeleteView.as_view(), name='waiter_delete'),
 ]

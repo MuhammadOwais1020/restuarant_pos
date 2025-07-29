@@ -433,6 +433,11 @@
   input:checked + .slider {
     background-color: #4caf50;
   }
+
+    input:checked + .food-panda {
+    background-color: #FF2B85;
+  }
+
   input:checked + .slider:before {
     transform: translateX(26px);
   }
@@ -448,7 +453,7 @@
   }
   .tables-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: var(--space-xs);
   }
   .table-btn {
@@ -537,6 +542,18 @@
     justify-content: flex-end;
     padding-block: 10px;
   }
+
+.table-btn i{
+  font-size: 50px;
+}
+.table-btn span{
+  font-size: 18px;
+  font-weight: bold;
+}
+  .container-food-panda, .container-food-panda th{
+    background: #FF2B85 !important;
+    color: white;
+  }
 </style>
 {% endblock %} {% block content %}
 <div class="order-container">
@@ -553,7 +570,7 @@
       <span> Token #: {% if order and order.token_number %} {{ order.token_number }} {% else %} &mdash; {% endif %} </span>
     </div>
     <div class="table-selector">
-      <h3 id="table-heading">Walk-in Customer</h3>
+      <h3 id="table-heading">Take-Away Customer</h3>
       <div class="tables-grid">
         {% for table in tables %}
         <button class="table-btn {% if table.has_items %} active{% endif %} {% if order and order.table_id == table.id %} selected{% endif %}" data-table-id="{{ table.id }}">
@@ -568,7 +585,7 @@
 
         <button class="table-btn{% if not order or not order.table %} selected{% endif %}" data-table-id="">
           <i class="fa fa-user fa-2x"></i>
-          <span>Walk-in</span>
+          <span>Take Away</span>
         </button>
       </div>
     </div>
@@ -654,6 +671,15 @@
     <!-- BOTTOM 20%: Action Buttons (Reset / Create/Update / New / Paid) -->
     <div class="right-bottom-actions">
       <div class="toggle-actions">
+      <div class="toggle-source">
+            <label class="toggle-switch-container" for="food-panda-source">
+              <span>Food Panda Order:</span>
+             <label class="switch">
+              <input type="checkbox" id="food-panda-source" name="source" />
+            <span class="slider food-panda"></span>  
+            </label>
+            </label>
+      </div>
         <div>
           <!-- TOKEN toggle -->
           <label class="toggle-switch-container">
@@ -701,6 +727,7 @@
 </script>
 
 <script>
+  const foodPandaCheckbox = document.getElementById("food-panda-source");
   // ====== CSRF token helper ======
   function getCookie(name) {
     let cookieValue = null;
@@ -751,6 +778,151 @@
 
   // ====== Attach listeners on DOMContentLoaded ======
   document.addEventListener("DOMContentLoaded", () => {
+    updateItemPrices();
+    updateItemAmounts();
+    
+    const foodPandaContainer = document.querySelector('.order-items-table');
+
+    foodPandaCheckbox.addEventListener('change', function() { 
+      updateItemPrices();
+      updateItemAmounts();
+      if (this.checked) {
+            foodPandaContainer.classList.add('container-food-panda');  // Add color change class
+        } else {
+            foodPandaContainer.classList.remove('container-food-panda');  // Remove color change class
+        }
+    });
+
+
+    function updateItemAmounts() {
+    const itemsTable = document.querySelector('.order-items-table tbody'); // Get the table body
+    const rows = itemsTable.querySelectorAll('tr'); // Get all rows in the table
+
+    rows.forEach(row => {
+        const priceCell = row.querySelector('.item-price');  // Assuming each row has a price cell
+        const amountCell = row.querySelector('.item-amount');  // Assuming each row has an amount cell
+        const qtyInput = row.querySelector('.item-qty-input'); // Get the quantity input
+
+        const itemId = row.getAttribute('data-item-id'); // Assuming each row has a data-item-id attribute
+
+        // Find the item based on its ID (replace with your logic to get item)
+        const item = allMenuItems.find(mi => mi.id == itemId);
+
+        if (!item) {
+            console.error("Item not found with ID: ", itemId);
+            return; // Skip this row if the item is not found
+        }
+
+        // Check if it's a Food Panda order
+        let itemPrice = foodPandaCheckbox.checked ? (item.food_panda_price || 0) : item.price;
+
+        // Update the unit price
+        priceCell.innerText = formatPrice(itemPrice);
+
+        // Update the amount based on quantity
+        const qty = parseInt(qtyInput.value, 10);
+        const amount = itemPrice * qty;
+        amountCell.innerText = formatPrice(amount);
+    });
+
+    // After updating amounts, recalculate totals
+    recalcTotals();
+}
+
+
+function recalcTotals() {
+    let subtotal = 0;
+    const itemsTable = document.querySelector('.order-items-table tbody');
+    const rows = itemsTable.querySelectorAll('tr');
+
+    rows.forEach(row => {
+        const quantity = parseInt(row.querySelector('.item-qty-input').value, 10);
+        const price = parseFloat(row.querySelector('.item-price').innerText);
+        subtotal += quantity * price;
+    });
+
+    document.getElementById('subtotal-amt').innerText = formatPrice(subtotal);
+
+    const discount = parseFloat(document.getElementById('discount').value) || 0;
+    const taxPerc = parseFloat(document.getElementById('tax-perc').value) || 0;
+    const serviceCharge = parseFloat(document.getElementById('service-charge').value) || 0;
+
+    const afterDiscount = Math.max(subtotal - discount, 0);
+    const taxAmt = afterDiscount * (taxPerc / 100);
+    const grandTotal = afterDiscount + taxAmt + serviceCharge;
+
+    document.getElementById('grand-total-amt').innerText = formatPrice(grandTotal);
+}
+
+
+        function updateItemPrices() {
+          console.log("update item funciton is calling.....")
+    const itemsTable = document.querySelector('.order-items-table tbody'); // Assuming your table is inside tbody
+    const rows = itemsTable.querySelectorAll('tr'); // Get all rows
+
+    rows.forEach(row => {
+        const priceCell = row.querySelector('.item-price');  // Assuming each row has a price cell
+        const itemId = row.getAttribute('data-item-id'); // Assuming each row has data-item-id attribute
+
+        // Find the item based on its ID
+        const item = allMenuItems.find(mi => mi.id == itemId);
+        console.log(allMenuItems);
+        if (!item) {
+            console.error("Item not found with ID: ", itemId);
+            return; // Skip this row if the item is not found
+        }
+
+        // Check if it's a Food Panda order
+        if (foodPandaCheckbox.checked) {
+            // If Food Panda price is available, update with it, otherwise use 0
+            const foodPandaPrice = item.food_panda_price || 0;
+            priceCell.innerText = formatPrice(foodPandaPrice);
+        } else {
+            // Otherwise, revert to the original price
+            priceCell.innerText = formatPrice(item.price);
+        }
+    });
+}
+
+// Helper function to format price
+function formatPrice(price) {
+    return price.toFixed(2); // You can modify the format based on your needs
+}
+
+    // Recalculate totals when prices change
+    function recalcTotals() {
+        let subtotal = 0;
+        const itemsTable = document.querySelector('.order-items-table tbody');
+        const rows = itemsTable.querySelectorAll('tr');
+
+        rows.forEach(row => {
+            const quantity = parseInt(row.querySelector('.item-qty-input').value, 10);
+            const price = parseFloat(row.querySelector('.item-price').innerText);
+            subtotal += quantity * price;
+        });
+
+        document.getElementById('subtotal-amt').innerText = formatPrice(subtotal);
+
+        const discount = parseFloat(document.getElementById('discount').value) || 0;
+        const taxPerc = parseFloat(document.getElementById('tax-perc').value) || 0;
+        const serviceCharge = parseFloat(document.getElementById('service-charge').value) || 0;
+
+        const afterDiscount = Math.max(subtotal - discount, 0);
+        const taxAmt = afterDiscount * (taxPerc / 100);
+        const grandTotal = afterDiscount + taxAmt + serviceCharge;
+
+        document.getElementById('grand-total-amt').innerText = formatPrice(grandTotal);
+    }
+
+    // Event listener to update totals when quantities change
+    document.querySelector('.order-items-table').addEventListener('change', function(event) {
+        if (event.target.matches('.item-qty-input')) {
+            recalcTotals();
+        }
+    });
+
+    // Initial call to update prices based on toggle state
+    updateItemPrices();
     const tokenCheckbox = document.getElementById("toggle-token");
     const billCheckbox = document.getElementById("toggle-bill");
 
@@ -862,6 +1034,7 @@
       selectedItems.forEach((it, idx) => {
         const amount = (it.quantity * it.unit_price).toFixed(2);
         const tr = document.createElement('tr');
+        tr.setAttribute('data-item-id', it.id);
         tr.setAttribute('data-index', idx);
         tr.innerHTML = `
           <td>${idx + 1}</td>
@@ -869,7 +1042,7 @@
           <td>
             <input type="number" class="item-qty-input" min="1" value="${it.quantity}">
           </td>
-          <td>${formatPrice(it.unit_price)}</td>
+          <td class="item-price">${formatPrice(it.unit_price)}</td>
           <td class="item-amount">${amount}</td>
           <td>
             <button class="btn-remove-item"><i class="fa fa-trash"></i></button>
@@ -886,15 +1059,27 @@
       const existingIdx = selectedItems.findIndex(
         it => it.type === type && it.id === id
       );
+      let priceToUse = unit_price;
+
+      if (foodPandaCheckbox.checked) {
+          // If Food Panda is selected, use the food panda price
+          const item = allMenuItems.find(mi => mi.id === id);
+          if (item && item.food_panda_price) {
+              priceToUse = item.food_panda_price;
+          } else {
+              priceToUse = 0; // Fallback if no food_panda_price is available
+          }
+      }
       if (existingIdx > -1) {
         selectedItems[existingIdx].quantity += 1;
+        selectedItems[existingIdx].unit_price = priceToUse;
       } else {
         selectedItems.push({
           type,
           id,
           name,
           quantity: 1,
-          unit_price
+          unit_price: priceToUse
         });
       }
       renderOrderItemsTable();
@@ -1123,6 +1308,7 @@
       // 10) Create/Update button: AJAX‐post
       document.querySelector('.btn-create')
         .addEventListener('click', () => {
+          
           const discount = parseFloat(
             document.getElementById('discount').value
           ) || 0;
@@ -1298,6 +1484,7 @@
 
   // ─ Include table_id in every save/paid payload ─
   function buildPayload(action) {
+    const source = foodPandaCheckbox.checked ? "food_panda" : "walk_in";
     const base = {
       discount: parseFloat(document.getElementById('discount').value)||0,
       tax_percentage: parseFloat(document.getElementById('tax-perc').value)||0,
@@ -1309,7 +1496,8 @@
         quantity: it.quantity,
         unit_price: it.unit_price
       })),
-      action: action
+      action: action,
+      source: source
     };
     base.table_id = selectedTableId;
     return base;

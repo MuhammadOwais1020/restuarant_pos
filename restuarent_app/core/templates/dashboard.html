@@ -1,41 +1,132 @@
-{% extends 'base.html' %} {% block title %}Dashboard{% endblock %} {% block extra_head %}
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block extra_head %}
 <style>
   .main-nav {
     display: none;
   }
+
+  /* Dashboard Container */
+  .dashboard-container {
+    background: #f4f7fa;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+
+  /* Dashboard Grid */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(250px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+  }
+
+  .card {
+    background: #fff;
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  }
+
+  .card i {
+    color: #ff5722;
+    font-size: 3rem;
+  }
+
+  .card h3 {
+    margin-top: 1rem;
+    color: #333;
+    font-size: 1.25rem;
+  }
+
+  /* Responsive Design for Smaller Screens */
+  @media screen and (max-width: 768px) {
+    .dashboard-container {
+      padding: 1rem;
+    }
+
+    .card h3 {
+      font-size: 1rem;
+    }
+  }
 </style>
-{% endblock %} {% block content %}
+{% endblock %}
+
+{% block content %}
 <section class="dashboard-container">
   <main class="dashboard-grid">
-    <a href="{% url 'category_list' %}" class="card">
-      <i class="fa fa-folder fa-3x"></i>
-      <h3>Categories</h3>
-    </a>
+  <!-- Categories Card -->
+  <a href="{% url 'category_list' %}" class="card">
+    <i class="fa fa-folder fa-3x"></i>
+    <h3>Categories</h3>
+  </a>
 
-    <a href="{% url 'menuitem_list' %}" class="card">
-      <i class="fa fa-tags fa-3x"></i>
-      <h3>Menu Items</h3>
-    </a>
+  <!-- Menu Items Card -->
+  <a href="{% url 'menuitem_list' %}" class="card">
+    <i class="fa fa-tags fa-3x"></i>
+    <h3>Menu Items</h3>
+  </a>
 
-    <a href="{% url 'deal_list' %}" class="card">
-      <i class="fa fa-tag fa-3x"></i>
-      <h3>Deals</h3>
-    </a>
+  <!-- Deals Card -->
+  <a href="{% url 'deal_list' %}" class="card">
+    <i class="fa fa-tag fa-3x"></i>
+    <h3>Deals</h3>
+  </a>
 
-    <a href="{% url 'order_list' %}" class="card">
-      <i class="fa fa-receipt fa-3x"></i>
-      <h3>Orders</h3>
-    </a>
+  <!-- Orders Card -->
+  <a href="{% url 'order_list' %}" class="card">
+    <i class="fa fa-receipt fa-3x"></i>
+    <h3>Orders</h3>
+  </a>
 
-    <a href="/tables/" class="card">
-      <i class="fa fa-table fa-3x"></i>
-      <h3>Tables</h3>
-    </a>
+  <!-- Tables Card -->
+  <a href="{% url 'table_list' %}" class="card">
+    <i class="fa fa-table fa-3x"></i>
+    <h3>Tables</h3>
+  </a>
 
-    <a href="/reports/" class="card">
-      <i class="fa fa-chart-line fa-3x"></i>
-      <h3>Reports</h3>
-    </a>
-  </main>
+  <!-- Reports Card -->
+  <a href="{% url 'reports' %}" class="card">
+    <i class="fa fa-chart-line fa-3x"></i>
+    <h3>Reports</h3>
+  </a>
+
+  <!-- Suppliers Card -->
+  <a href="{% url 'supplier_list' %}" class="card">
+    <i class="fa fa-truck fa-3x"></i>
+    <h3>Suppliers</h3>
+  </a>
+
+  <!-- Raw Materials Card -->
+  <a href="{% url 'raw_material_list' %}" class="card">
+    <i class="fa fa-box fa-3x"></i>
+    <h3>Stock</h3>
+  </a>
+
+  <!-- Stock Purchases / Purchase Orders Card -->
+  <a href="{% url 'purchase_order_list' %}" class="card">
+    <i class="fa fa-box fa-3x"></i>
+    <h3>Purchase Orders</h3>
+  </a>
+<!-- Recipes Card -->
+<a href="{% url 'recipe_list' %}" class="card">
+  <i class="fa fa-book-open fa-3x"></i>
+  <h3>Recipes</h3>
+</a>
+
+<a href="{% url 'cost_report' %}" class="card">
+  <i class="fa fa-calculator fa-3x"></i>
+  <h3>Cost Report</h3>
+</a>
+
+</main>
 </section>
 {% endblock %}

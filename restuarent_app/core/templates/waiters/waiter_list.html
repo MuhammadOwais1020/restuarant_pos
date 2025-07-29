@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}Waiters{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-user-tie"></i> Waiters</h1>
+  <a href="{% url 'waiter_create' %}" class="btn"><i class="fa fa-plus"></i> New Waiter</a>
+</div>
+
+<form class="search-bar" method="get">
+  <input name="q" placeholder="Search waiters..." value="{{ request.GET.q|default:'' }}">
+  <button type="submit"><i class="fa fa-search"></i></button>
+</form>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Employee ID</th>
+      <th>Phone</th>
+      <th>Created At</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for waiter in waiters %}
+    <tr id="waiter-{{ waiter.pk }}">
+      <td>{{ waiter.name }}</td>
+      <td>{{ waiter.employee_id }}</td>
+      <td>{{ waiter.phone|default:"—" }}</td>
+      <td>{{ waiter.created_at|date:"Y-m-d H:i" }}</td>
+      <td>
+        <a href="{% url 'waiter_detail' waiter.pk %}"><i class="fa fa-eye"></i></a>
+        <a href="{% url 'waiter_edit' waiter.pk %}"><i class="fa fa-edit"></i></a>
+        <button class="btn-delete" data-url="{% url 'waiter_delete' waiter.pk %}">
+          <i class="fa fa-trash"></i>
+        </button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">No waiters found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  function getCookie(name) {
+    let v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+    return v ? v.pop() : '';
+  }
+  $.ajaxSetup({ headers: {'X-CSRFToken': getCookie('csrftoken')} });
+
+  $('.btn-delete').click(function(){
+    const url = $(this).data('url');
+    const row = '#waiter-' + url.split('/').slice(-2)[0];
+    if(!confirm('Delete this waiter?')) return;
+    $.post(url, {}, () => {
+      showAlert('success','Deleted');
+      $(row).remove();
+    });
+  });
+</script>
+{% endblock %}

@@ -4,10 +4,24 @@ from django.contrib.auth import authenticate, login, logout
 from .license_check import enforce_authorization
 from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin
-from .models import PrintStatus
+from .models import InventoryTransaction, PrintStatus, PurchaseOrder, RawMaterial, Recipe
 from django.views.decorators.http import require_POST
 
 from .printing import send_to_printer
+
+
+import json
+from decimal import Decimal
+from django.db.models import Sum, F
+from django.views.generic import TemplateView
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+from .models import (
+    RawMaterialUnitConversion,
+    PurchaseOrderItem,
+    MenuItem, Deal
+)
+
 
 class LoginView(View):
     def get(self, request):
@@ -126,7 +140,7 @@ class MenuItemListView(LoginRequiredMixin, ListView):
 
 class MenuItemCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'is_available', 'image']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'is_available', 'image']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -137,7 +151,7 @@ class MenuItemDetailView(LoginRequiredMixin, DetailView):
 
 class MenuItemUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'is_available', 'image']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'is_available', 'image']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -182,7 +196,7 @@ class DealListView(LoginRequiredMixin, ListView):
 
 class DealCreateView(LoginRequiredMixin, CreateView):
     model = Deal
-    fields = ['name', 'description', 'price', 'is_available', 'image']
+    fields = ['name', 'description', 'price', 'food_panda_price', 'is_available', 'image']
     template_name = 'deals/deal_form.html'
     success_url = reverse_lazy('deal_list')
 
@@ -210,7 +224,7 @@ class DealCreateView(LoginRequiredMixin, CreateView):
 
 class DealUpdateView(LoginRequiredMixin, UpdateView):
     model = Deal
-    fields = ['name', 'description', 'price', 'is_available', 'image']
+    fields = ['name', 'description', 'price', 'food_panda_price', 'is_available', 'image']
     template_name = 'deals/deal_form.html'
     success_url = reverse_lazy('deal_list')
 
@@ -268,13 +282,6 @@ class OrderListView(LoginRequiredMixin, ListView):
     paginate_by = 15
 
     def get_queryset(self):
-        """
-        1) Start with the base queryset, prefetching related 'table' and 'created_by'.
-        2) Apply your existing filters (q, status, date_from, date_to).
-        3) Annotate each Order with:
-           - 'subtotal': sum of (quantity * unit_price) over all OrderItems
-           - 'total_amount': (subtotal - discount) + (subtotal * tax_percentage/100) + service_charge
-        """
         # Step 1: Base queryset with select_related
         qs = super().get_queryset().select_related('table', 'created_by').order_by('-created_at')
 
@@ -343,10 +350,6 @@ from .models import Category, MenuItem, Deal, Table, Order, OrderItem, PrintStat
 from .printing import send_to_printer
 
 class OrderCreateView(LoginRequiredMixin, View):
-    """
-    GET:  Render a blank “New Order” form with table-selector annotated.
-    POST: Accept JSON, create Order + OrderItems. If action=="paid", print and free table.
-    """
 
     def get(self, request):
         categories = Category.objects.prefetch_related('items').order_by('name')
@@ -358,6 +361,7 @@ class OrderCreateView(LoginRequiredMixin, View):
                 "id": mi.id,
                 "name": mi.name,
                 "price": float(mi.price),
+                "food_panda_price": float(mi.food_panda_price) if mi.food_panda_price is not None else 0.0,
                 "category_id": mi.category.id,
                 "image_url": mi.image.url if mi.image else ""
             }
@@ -377,6 +381,7 @@ class OrderCreateView(LoginRequiredMixin, View):
                 "id": dl.id,
                 "name": dl.name,
                 "price": float(dl.price),
+                "food_panda_price": float(dl.food_panda_price) if dl.food_panda_price is not None else 0.0,
                 "image_url": dl.image.url if dl.image else "",
                 "items": items,
             })
@@ -408,12 +413,15 @@ class OrderCreateView(LoginRequiredMixin, View):
             return HttpResponseBadRequest("Invalid JSON")
 
         user = request.user
-        discount       = data.get("discount", 0) or 0
+        discount = data.get("discount", 0) or 0
         tax_percentage = data.get("tax_percentage", 0) or 0
         service_charge = data.get("service_charge", 0) or 0
-        items          = data.get("items", [])
-        action         = data.get("action", "create")
-        table_id       = data.get("table_id")
+        items = data.get("items", [])
+        action = data.get("action", "create")
+        table_id = data.get("table_id")
+        is_food_panda = data.get("source", False)
+
+        source_value = "food_panda" if is_food_panda else "walk_in"
 
         status_value = "paid" if action == "paid" else "pending"
 
@@ -423,7 +431,8 @@ class OrderCreateView(LoginRequiredMixin, View):
             discount=discount,
             tax_percentage=tax_percentage,
             service_charge=service_charge,
-            status=status_value
+            status=status_value,
+            source=source_value 
         )
 
         if table_id and status_value != "paid":
@@ -432,45 +441,60 @@ class OrderCreateView(LoginRequiredMixin, View):
             tbl.save()
 
         for it in items:
+            unit_price = it["unit_price"]
+            # Check if the source is "Food Panda"
+            if is_food_panda:
+                if it.get("type") == "menu":
+                    menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
+                    unit_price = menu_item.food_panda_price if menu_item.food_panda_price else menu_item.price
+                elif it.get("type") == "deal":
+                    deal = Deal.objects.get(pk=it["deal_id"])
+                    unit_price = deal.food_panda_price if deal.food_panda_price else deal.price
+            else:
+                # Use default price if not a Food Panda order
+                if it.get("type") == "menu":
+                    menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
+                    unit_price = menu_item.price
+                elif it.get("type") == "deal":
+                    deal = Deal.objects.get(pk=it["deal_id"])
+                    unit_price = deal.price
+
             if it.get("type") == "menu":
                 OrderItem.objects.create(
                     order=order,
                     menu_item_id=it["menu_item_id"],
                     quantity=it["quantity"],
-                    unit_price=it["unit_price"]
+                    unit_price=unit_price
                 )
             elif it.get("type") == "deal":
                 OrderItem.objects.create(
                     order=order,
                     deal_id=it["deal_id"],
                     quantity=it["quantity"],
-                    unit_price=it["unit_price"]
+                    unit_price=unit_price
                 )
 
-        if status_value == "paid":
-            try:
-                ps = PrintStatus.objects.first()
-                bill_enabled  = ps.bill  if ps else False
-                token_enabled = ps.token if ps else False
+            if status_value == "paid":
+                try:
+                    ps = PrintStatus.objects.first()
+                    bill_enabled  = ps.bill  if ps else False
+                    token_enabled = ps.token if ps else False
 
+                    if token_enabled:
+                        token_data = build_token_bytes(order, is_food_panda)
+                        send_to_printer(token_data)
+                    if bill_enabled:
+                        bill_data = build_bill_bytes(order, is_food_panda)
+                        send_to_printer(bill_data)
 
-                if token_enabled:
-                    token_data = build_token_bytes(order)
-                    send_to_printer(token_data)
-                if bill_enabled:
-                    bill_data = build_bill_bytes(order)
-                    send_to_printer(bill_data)
+                    if table_id:
+                        tbl = Table.objects.get(pk=table_id)
+                        tbl.is_occupied = False
+                        tbl.save()
+                except Exception as e:
+                    return JsonResponse({"error": f"Print failed: {e}"}, status=500)
 
-                # Free table
-                if table_id:
-                    tbl = Table.objects.get(pk=table_id)
-                    tbl.is_occupied = False
-                    tbl.save()
-            except Exception as e:
-                return JsonResponse({"error": f"Print failed: {e}"}, status=500)
-
-        return JsonResponse({"message": "Order Created", "order_id": order.id})
-
+            return JsonResponse({"message": "Order Created", "order_id": order.id})
 
 # core/views.py
 
@@ -505,6 +529,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
                 "id": mi.id,
                 "name": mi.name,
                 "price": float(mi.price),
+                "food_panda_price": float(mi.food_panda_price) if mi.food_panda_price is not None else 0.0,
                 "category_id": mi.category.id,
                 "image_url": mi.image.url if mi.image else ""
             }
@@ -524,6 +549,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
                 "id": dl.id,
                 "name": dl.name,
                 "price": float(dl.price),
+                "food_panda_price": float(dl.food_panda_price) if dl.food_panda_price is not None else 0.0,
                 "image_url": dl.image.url if dl.image else "",
                 "items": items,
             })
@@ -673,7 +699,7 @@ import os
 from django.conf import settings
 from .escpos_logo import logo_to_escpos_bytes
 
-def build_token_bytes(order):
+def build_token_bytes(order, is_food_panda = False):
     esc = b"\x1B"
     gs  = b"\x1D"
     lines = []
@@ -682,7 +708,7 @@ def build_token_bytes(order):
     logo_path = os.path.join(settings.BASE_DIR, "static/img/logo.png")
     try:
         logo_bytes = logo_to_escpos_bytes(logo_path)
-        lines.append(logo_bytes)
+        # lines.append(logo_bytes)
         # Add a blank line after logo so text doesn't overlap
         lines.append(b"\n")
     except Exception as e:
@@ -692,7 +718,7 @@ def build_token_bytes(order):
     # ─── Restaurant name, larger/bold ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")   # center alignment
     lines.append(esc + b"\x21" + b"\x30")   # double height & width
-    lines.append(b"MR FOOD\n")
+    lines.append(b"Cafe Kunj\n")
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
 
@@ -700,6 +726,9 @@ def build_token_bytes(order):
     lines.append(esc + b"\x61" + b"\x01")   # center
     lines.append(b"KITCHEN TOKEN\n\n")
 
+    if is_food_panda:
+        lines.append(esc + b"\x61" + b"\x01")   # center
+        lines.append(b"FOOD PANDA Order\n\n")
     # ─── Token number, bold, slightly bigger ─────────────────────────────
     token_str = str(order.token_number).encode("ascii")
     
@@ -714,6 +743,7 @@ def build_token_bytes(order):
     lines.append(esc + b"\x61" + b"\x00")   # left align
     lines.append(b"Date: " + now_str + b"\n")
     lines.append(b"-" * 32 + b"\n")         # 32-char full width separator
+
 
     # ─── Order Items List (left name, right qty) ─────────────────────────
     new_items = order.items.filter(token_printed=False)
@@ -823,26 +853,35 @@ def build_token_bytes(order):
 #     return b"".join(lines)
 
 
-def build_bill_bytes(order):
+def build_bill_bytes(order, is_food_panda = False):
     esc = b"\x1B"
     gs  = b"\x1D"
     lines = []
 
     # ─── Logo at top ──────────────────────────────────────────────────────
-    logo_path = os.path.join(settings.BASE_DIR, "static/img/logo.png")
+    logo_path = os.path.join(settings.BASE_DIR, "media\img\logo.png")
+    print(f"Logo Path: {logo_path}")
     try:
-        lines.append(logo_to_escpos_bytes(logo_path))
+        image_data = logo_to_escpos_bytes(logo_path)
+        print(f"Image Data: {image_data.hex()[:100]}...")  # Print the first 200 bytes of the image data
+
+        # lines.append(image_data)
         lines.append(b"\n")
-    except:
+    except Exception as e:
+        print(f"Error converting logo: {e}")
         lines.append(b"")
 
     # ─── Restaurant name, double size ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")
     lines.append(esc + b"\x21" + b"\x30")
-    lines.append(b"MR FOOD\n")
+    lines.append(b"Cafe Kunj\n")
     lines.append(esc + b"\x21" + b"\x00")
     lines.append(b"\n")
-
+    
+    if is_food_panda:
+        lines.append(esc + b"\x61" + b"\x01")   # center
+        lines.append(b"FOOD PANDA Order\n\n")
+    
     # ─── Order metadata (left) ────────────────────────────────────────────
     order_number_str = str(order.number).encode("ascii")
     token_str = str(order.token_number).encode("ascii")
@@ -900,6 +939,9 @@ def build_bill_bytes(order):
     lines.append(esc + b"\x45" + b"\x00")   # bold off
 
     # ─── Footer / Branding (professional signature) ───────────────────────
+    lines.append(b"-" * 40 + b"\n\n")
+    lines.append(b"Home Delivery Contact: +92 303 6686039\n\n")
+    lines.append(esc + b"\x61" + b"\x00")   # left align
     lines.append(b"-" * 40 + b"\n")
     lines.append(esc + b"\x61" + b"\x01")   # center
     # Company name
@@ -912,7 +954,7 @@ def build_bill_bytes(order):
     lines.append(b"Comprehensive Business Software Solutions\n\n")
     lines.append(b"Contact: +92 305 8214945\n")
     lines.append(b"www.qonkar.com\n\n")
-    lines.append(b"Thank you for your support!\n\n\n\n\n\n\n")
+    lines.append(b"Thank you for your support!\n\n\n")
     lines.append(b"\n" * 4)
 
     # ─── Cut paper (full) ─────────────────────────────────────────────────
@@ -1387,3 +1429,638 @@ class TableSwitchView(LoginRequiredMixin, View):
             "tax_percentage": float(order.tax_percentage),
             "service_charge": float(order.service_charge),
         })
+
+
+from django.urls import reverse_lazy
+from django.views.generic import ListView, CreateView, DetailView, UpdateView, DeleteView
+from django.http import JsonResponse
+from .models import Supplier
+from .views import AjaxableResponseMixin  # reuse your existing mixin
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+# --- Suppliers CRUD ---
+class SupplierListView(LoginRequiredMixin, ListView):
+    model = Supplier
+    template_name = 'suppliers/supplier_list.html'
+    context_object_name = 'suppliers'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().order_by('-created_at')
+        q = self.request.GET.get('q')
+        return qs.filter(name__icontains=q) if q else qs
+
+class SupplierCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
+    model = Supplier
+    fields = ['name','contact_number','email','address']
+    template_name = 'suppliers/supplier_form.html'
+    success_url = reverse_lazy('supplier_list')
+
+class SupplierDetailView(LoginRequiredMixin, DetailView):
+    model = Supplier
+    template_name = 'suppliers/supplier_detail.html'
+    context_object_name = 'supplier'
+
+class SupplierUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
+    model = Supplier
+    fields = ['name','contact_number','email','address']
+    template_name = 'suppliers/supplier_form.html'
+    success_url = reverse_lazy('supplier_list')
+
+class SupplierDeleteView(LoginRequiredMixin, DeleteView):
+    model = Supplier
+    success_url = reverse_lazy('supplier_list')
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if request.is_ajax():
+            return JsonResponse({'message': 'Deleted'})
+        return super().delete(request, *args, **kwargs)
+
+
+from django.urls import reverse_lazy
+from django.http import JsonResponse
+from django.views.generic import ListView, CreateView, DetailView, UpdateView, DeleteView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from .models import RawMaterial
+from .views import AjaxableResponseMixin  # your existing mixin
+
+# --- Raw Materials CRUD ---
+class RawMaterialListView(LoginRequiredMixin, ListView):
+    model = RawMaterial
+    template_name = 'raw_materials/rawmaterial_list.html'
+    context_object_name = 'materials'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('supplier').order_by('-created_at')
+        q = self.request.GET.get('q')
+        return qs.filter(name__icontains=q) if q else qs
+
+class RawMaterialCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
+    model = RawMaterial
+    fields = ['name', 'unit', 'supplier', 'current_stock', 'reorder_level']
+    template_name = 'raw_materials/rawmaterial_form.html'
+    success_url = reverse_lazy('raw_material_list')
+
+class RawMaterialDetailView(LoginRequiredMixin, DetailView):
+    model = RawMaterial
+    template_name = 'raw_materials/rawmaterial_detail.html'
+    context_object_name = 'material'
+
+class RawMaterialUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
+    model = RawMaterial
+    fields = ['name', 'unit', 'supplier', 'current_stock', 'reorder_level']
+    template_name = 'raw_materials/rawmaterial_form.html'
+    success_url = reverse_lazy('raw_material_list')
+
+class RawMaterialDeleteView(LoginRequiredMixin, DeleteView):
+    model = RawMaterial
+    success_url = reverse_lazy('raw_material_list')
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if request.is_ajax():
+            return JsonResponse({'message': 'Deleted'})
+        return super().delete(request, *args, **kwargs)
+
+
+import json
+from django.urls import reverse_lazy
+from django.http import JsonResponse, HttpResponseBadRequest
+from django.shortcuts import get_object_or_404
+from django.views.decorators.http import require_POST
+from django.views.generic import ListView, CreateView, DetailView, UpdateView, DeleteView
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+from .models import RawMaterial, PurchaseOrder, PurchaseOrderItem, InventoryTransaction
+from .views import AjaxableResponseMixin  # your existing mixin
+
+# --- Purchase Orders CRUD ---
+class PurchaseOrderListView(LoginRequiredMixin, ListView):
+    model = PurchaseOrder
+    template_name = 'purchase_orders/purchaseorder_list.html'
+    context_object_name = 'orders'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('supplier','created_by').order_by('-created_at')
+        q = self.request.GET.get('q')
+        if q:
+            return qs.filter(supplier__name__icontains=q)
+        return qs
+
+class PurchaseOrderCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
+    model = PurchaseOrder
+    fields = ['supplier']
+    template_name = 'purchase_orders/purchaseorder_form.html'
+    success_url = reverse_lazy('purchase_order_list')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        # serialize raw materials
+        rms = RawMaterial.objects.select_related('supplier').order_by('name')
+        ctx['raw_materials_json'] = json.dumps([
+            {'pk': rm.pk, 'name': rm.name, 'unit': rm.unit}
+            for rm in rms
+        ])
+        ctx['initial_po_items'] = []
+        return ctx
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        resp = super().form_valid(form)
+        data = json.loads(self.request.POST.get('po_items_json','[]'))
+        total = 0
+        for it in data:
+            qty = it['quantity']
+            up  = it['unit_price']
+            PurchaseOrderItem.objects.create(
+                purchase_order=self.object,
+                raw_material_id=it['raw_material_id'],
+                quantity=qty,
+                unit_price=up
+            )
+            total += qty * up
+        self.object.total_cost = total
+        self.object.save()
+        return resp
+
+class PurchaseOrderUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
+    model = PurchaseOrder
+    fields = ['supplier']
+    template_name = 'purchase_orders/purchaseorder_form.html'
+    success_url = reverse_lazy('purchase_order_list')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        rms = RawMaterial.objects.select_related('supplier').order_by('name')
+        ctx['raw_materials_json'] = json.dumps([
+            {'pk': rm.pk, 'name': rm.name, 'unit': rm.unit}
+            for rm in rms
+        ])
+        ctx['initial_po_items'] = [
+            {
+                'raw_material_id': pi.raw_material_id,
+                'quantity': float(pi.quantity),
+                'unit_price': float(pi.unit_price)
+            }
+            for pi in self.object.items.all()
+        ]
+        return ctx
+
+    def form_valid(self, form):
+        # delete old items
+        PurchaseOrderItem.objects.filter(purchase_order=self.object).delete()
+        resp = super().form_valid(form)
+        data = json.loads(self.request.POST.get('po_items_json','[]'))
+        total = 0
+        for it in data:
+            qty = it['quantity']
+            up  = it['unit_price']
+            poi = PurchaseOrderItem.objects.create(
+                purchase_order=self.object,
+                raw_material_id=it['raw_material_id'],
+                quantity=qty,
+                unit_price=up
+            )
+            total += qty * up
+        self.object.total_cost = total
+        self.object.save()
+        return resp
+
+class PurchaseOrderDetailView(LoginRequiredMixin, DetailView):
+    model = PurchaseOrder
+    template_name = 'purchase_orders/purchaseorder_detail.html'
+    context_object_name = 'order'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        # stock‑in transactions for this PO
+        ctx['transactions'] = InventoryTransaction.objects.filter(
+            purchase_order_item__purchase_order=self.object
+        ).order_by('-timestamp')
+        return ctx
+
+class PurchaseOrderDeleteView(LoginRequiredMixin, DeleteView):
+    model = PurchaseOrder
+    success_url = reverse_lazy('purchase_order_list')
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if request.is_ajax():
+            return JsonResponse({'message':'Deleted'})
+        return super().delete(request, *args, **kwargs)
+
+@require_POST
+def purchase_order_receive(request, pk):
+    po = get_object_or_404(PurchaseOrder, pk=pk)
+    po.mark_received()
+    return JsonResponse({'status':'success'})
+
+
+def get_avg_unit_cost(raw_material):
+    agg = PurchaseOrderItem.objects.filter(
+        purchase_order__status='received',
+        raw_material=raw_material
+    ).aggregate(
+        total_cost=Sum(F('quantity') * F('unit_price')),
+        total_qty=Sum('quantity')
+    )
+    total_cost = agg['total_cost'] or Decimal('0')
+    total_qty  = agg['total_qty']  or Decimal('0')
+    return (total_cost / total_qty) if total_qty else Decimal('0')
+
+def recipe_cost(recipe):
+    cost = Decimal('0')
+    # raw-material ingredients
+    for ingr in recipe.raw_ingredients.all():
+        rm    = ingr.raw_material
+        # find conversion to base unit (e.g. grams)
+        conv  = RawMaterialUnitConversion.objects.get(
+                    raw_material=rm, unit=ingr.unit
+               ).to_base_factor
+        qty   = ingr.quantity * Decimal(conv)
+        avg_c = get_avg_unit_cost(rm)
+        cost += qty * avg_c
+    # nested sub-recipes
+    for sub in recipe.subrecipes.all():
+        cost += recipe_cost(sub.sub_recipe) * Decimal(sub.quantity)
+    return cost
+
+
+from decimal import Decimal
+from datetime import date
+
+from django.views.generic import TemplateView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Sum, F, DecimalField
+
+from .models import (
+    RawMaterial,
+    RawMaterialUnitConversion,
+    MenuItem,
+    Deal,
+    OrderItem,
+)
+
+class CostReportView(LoginRequiredMixin, TemplateView):
+    template_name = 'reports/cost_report.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        today = date.today()
+
+        # reuse compute_recipe_cost for menu items
+        item_rows = []
+        for mi in MenuItem.objects.prefetch_related('recipe__raw_ingredients',
+                                                      'recipe__subrecipes__sub_recipe'):
+            cost = compute_recipe_cost(mi.recipe) if hasattr(mi, 'recipe') else Decimal('0')
+            sold = OrderItem.objects.filter(menu_item=mi,
+                                            order__created_at__date=today)\
+                                     .aggregate(q=Sum('quantity'))['q'] or 0
+            item_rows.append({
+                'name': mi.name,
+                'avg_cost_price': cost,
+                'sold_qty_today': sold,
+                'total_cost_today': cost * sold,
+            })
+
+        deal_rows = []
+        for dl in Deal.objects.prefetch_related('deal_items__menu_item'):
+            dcost = sum((next((r['avg_cost_price'] for r in item_rows if r['name']==di.menu_item.name), Decimal('0')) * di.quantity)
+                        for di in dl.deal_items.all())
+            sold = OrderItem.objects.filter(deal=dl,
+                                            order__created_at__date=today)\
+                                     .aggregate(q=Sum('quantity'))['q'] or 0
+            deal_rows.append({
+                'name': dl.name,
+                'avg_cost_price': dcost,
+                'sold_qty_today': sold,
+                'total_cost_today': dcost * sold,
+            })
+
+        ctx.update({
+            'today': today,
+            'item_rows': item_rows,
+            'deal_rows': deal_rows,
+        })
+        return ctx
+
+#recipe
+
+import json
+from decimal import Decimal
+from django.urls import reverse_lazy
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.views.generic import (
+    ListView, CreateView, DetailView, UpdateView, DeleteView
+)
+from django.contrib.auth.mixins import LoginRequiredMixin
+from .views import AjaxableResponseMixin
+from .models import (
+    Recipe, RecipeRawMaterial, RecipeSubRecipe,
+    RawMaterial, RawMaterialUnitConversion,
+    InventoryTransaction, MenuItem, Unit
+)
+
+# core/views.py (at top of file)
+import json
+from decimal import Decimal
+from django.db.models import Sum, F, DecimalField
+from .models import (
+    RawMaterial,
+    RawMaterialUnitConversion,
+    Unit,
+    PurchaseOrderItem,
+    Recipe, RecipeRawMaterial, RecipeSubRecipe
+)
+
+from decimal import Decimal
+from django.db.models import Sum, F, DecimalField
+from .models import (
+    RawMaterialUnitConversion,
+    PurchaseOrderItem,
+    RawMaterial,
+    Unit,
+)
+
+def compute_recipe_cost(recipe):
+    # 1) Build conversion map (unit → base grams or ml)
+    convs = {
+        (c.raw_material_id, c.unit_id): Decimal(c.to_base_factor)
+        for c in RawMaterialUnitConversion.objects.all()
+    }
+
+    # 2) Average cost per *gram* for each raw material
+    stats = PurchaseOrderItem.objects.values('raw_material_id')\
+        .annotate(
+            total_cost=Sum(F('unit_price') * F('quantity'), output_field=DecimalField()),
+            total_qty =Sum('quantity', output_field=DecimalField())
+        )
+
+    avg_cost_per_g = {}
+    for s in stats:
+        rm_id = s['raw_material_id']
+        tot_c = s['total_cost'] or Decimal('0')
+        tot_q = s['total_qty']  or Decimal('0')
+
+        # Figure out how many grams one PO‑unit represents
+        base_symbol = RawMaterial.objects.get(pk=rm_id).unit
+        pu = Unit.objects.get(symbol=base_symbol)
+        grams_per_pu = convs.get((rm_id, pu.pk), Decimal('1'))
+
+        if tot_q > 0:
+            # (cost ÷ qty) = cost per PU; ÷ grams_per_pu = cost per gram
+            avg_cost_per_g[rm_id] = (tot_c / tot_q) / grams_per_pu
+        else:
+            avg_cost_per_g[rm_id] = Decimal('0')
+
+    # 3) Sum raw‐ingredient costs
+    total = Decimal('0')
+    for ingr in recipe.raw_ingredients.all():
+        rm     = ingr.raw_material
+        qty    = Decimal(ingr.quantity)
+        factor = convs.get((rm.id, ingr.unit_id), Decimal('1'))
+        # convert recipe‑unit → grams
+        grams  = qty * factor
+        total += grams * avg_cost_per_g.get(rm.id, Decimal('0'))
+
+    # 4) Include sub‑recipes
+    for sub in recipe.subrecipes.all():
+        total += compute_recipe_cost(sub.sub_recipe) * Decimal(sub.quantity)
+
+    return total.quantize(Decimal('0.01'))
+
+# --- List & Detail ---
+class RecipeListView(LoginRequiredMixin, ListView):
+    model = Recipe
+    template_name = 'recipes/recipe_list.html'
+    context_object_name = 'recipes'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('menu_item')
+        q = self.request.GET.get('q')
+        return qs.filter(menu_item__name__icontains=q) if q else qs
+
+class RecipeDetailView(LoginRequiredMixin, DetailView):
+    model = Recipe
+    template_name = 'recipes/recipe_detail.html'
+    context_object_name = 'recipe'
+
+
+# --- Create & Update ---
+class RecipeCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
+    model = Recipe
+    fields = ['menu_item', 'name']
+    template_name = 'recipes/recipe_form.html'
+    success_url = reverse_lazy('recipe_list')
+
+    def get_context_data(self, **ctx):
+        data = super().get_context_data(**ctx)
+        # raw materials
+        rms = RawMaterial.objects.order_by('name')
+        data['raw_materials_json'] = json.dumps([
+            {'pk': rm.pk, 'name': rm.name, 'unit': rm.unit}
+            for rm in rms
+        ])
+        # units
+        from .models import Unit
+        units = Unit.objects.all()
+        data['units_json'] = json.dumps([
+            {'pk': u.pk, 'symbol': u.symbol} for u in units
+        ])
+        # existing recipes for nesting
+        recs = Recipe.objects.all()
+        data['recipes_json'] = json.dumps([
+            {'pk': r.pk, 'name': r.menu_item.name} for r in recs
+        ])
+        data['initial_raw'] = []
+        data['initial_sub'] = []
+        return data
+
+    def form_valid(self, form):
+        resp = super().form_valid(form)
+        recipe = self.object
+        # clear old if any (should be none)
+        RecipeRawMaterial.objects.filter(recipe=recipe).delete()
+        RecipeSubRecipe.objects.filter(recipe=recipe).delete()
+
+        raw_data = json.loads(self.request.POST.get('raw_json','[]'))
+        for it in raw_data:
+            RecipeRawMaterial.objects.create(
+                recipe=recipe,
+                raw_material_id=it['raw_material_id'],
+                quantity=Decimal(str(it['quantity'])),
+                unit_id=it['unit_id']
+            )
+
+        sub_data = json.loads(self.request.POST.get('sub_json','[]'))
+        for it in sub_data:
+            RecipeSubRecipe.objects.create(
+                recipe=recipe,
+                sub_recipe_id=it['sub_recipe_id'],
+                quantity=Decimal(str(it['quantity'])),
+                unit_id=it['unit_id']
+            )
+
+        # update menu_item.cost_price
+        cost = compute_recipe_cost(recipe)
+        mi = recipe.menu_item
+        mi.cost_price = cost
+        mi.save(update_fields=['cost_price'])
+
+        return resp
+
+class RecipeUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
+    model = Recipe
+    fields = ['menu_item', 'name']
+    template_name = 'recipes/recipe_form.html'
+    success_url = reverse_lazy('recipe_list')
+
+    def get_context_data(self, **kwargs):
+        data = super().get_context_data(**kwargs)
+
+        # 1) All raw materials
+        rms = RawMaterial.objects.order_by('name')
+        data['raw_materials_json'] = json.dumps([
+            {'pk': rm.pk, 'name': rm.name, 'unit': rm.unit}
+            for rm in rms
+        ])
+
+        # 2) All units
+        units = Unit.objects.all()
+        data['units_json'] = json.dumps([
+            {'pk': u.pk, 'symbol': u.symbol}
+            for u in units
+        ])
+
+        # 3) All other recipes (for nesting), excluding this one
+        recs = Recipe.objects.exclude(pk=self.object.pk)
+        data['recipes_json'] = json.dumps([
+            {'pk': r.pk, 'name': r.menu_item.name}
+            for r in recs
+        ])
+
+        # 4) Existing raw‑ingredient lines, as JSON
+        initial_raw = [
+            {
+                'raw_material_id': ri.raw_material_id,
+                'quantity': float(ri.quantity),
+                'unit_id': ri.unit_id
+            }
+            for ri in self.object.raw_ingredients.all()
+        ]
+        data['initial_raw_json'] = json.dumps(initial_raw)
+
+        # 5) Existing sub‑recipe lines, as JSON
+        initial_sub = [
+            {
+                'sub_recipe_id': sr.sub_recipe_id,
+                'quantity': float(sr.quantity),
+                'unit_id': sr.unit_id
+            }
+            for sr in self.object.subrecipes.all()
+        ]
+        data['initial_sub_json'] = json.dumps(initial_sub)
+
+        return data
+
+    def form_valid(self, form):
+        # 1) Save the Recipe core fields
+        response = super().form_valid(form)
+        recipe = self.object
+
+        # 2) Wipe & recreate all raw‑material links
+        RecipeRawMaterial.objects.filter(recipe=recipe).delete()
+        raw_data = json.loads(self.request.POST.get('raw_json', '[]'))
+        for it in raw_data:
+            RecipeRawMaterial.objects.create(
+                recipe=recipe,
+                raw_material_id=it['raw_material_id'],
+                quantity=Decimal(str(it['quantity'])),
+                unit_id=it['unit_id']
+            )
+
+        # 3) Wipe & recreate all sub‑recipe links
+        RecipeSubRecipe.objects.filter(recipe=recipe).delete()
+        sub_data = json.loads(self.request.POST.get('sub_json', '[]'))
+        for it in sub_data:
+            RecipeSubRecipe.objects.create(
+                recipe=recipe,
+                sub_recipe_id=it['sub_recipe_id'],
+                quantity=Decimal(str(it['quantity'])),
+                unit_id=it['unit_id']
+            )
+
+        # 4) Recompute & store the MenuItem's cost_price
+        cost = compute_recipe_cost(recipe)
+        mi = recipe.menu_item
+        mi.cost_price = cost
+        mi.save(update_fields=['cost_price'])
+
+        return response
+
+class RecipeDeleteView(LoginRequiredMixin, AjaxableResponseMixin, DeleteView):
+    model = Recipe
+    success_url = reverse_lazy('recipe_list')
+
+
+import json
+from django.urls import reverse_lazy
+from django.http import JsonResponse
+from django.views.generic import ListView, CreateView, DetailView, UpdateView, DeleteView
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+from .models import Waiter
+from .views import AjaxableResponseMixin  # your existing mixin
+
+# — Waiters CRUD —
+
+class WaiterListView(LoginRequiredMixin, ListView):
+    model = Waiter
+    template_name = 'waiters/waiter_list.html'
+    context_object_name = 'waiters'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().order_by('-created_at')
+        q = self.request.GET.get('q')
+        return qs.filter(name__icontains=q) if q else qs
+
+
+class WaiterCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
+    model = Waiter
+    fields = ['name', 'employee_id', 'phone']
+    template_name = 'waiters/waiter_form.html'
+    success_url = reverse_lazy('waiter_list')
+
+
+class WaiterDetailView(LoginRequiredMixin, DetailView):
+    model = Waiter
+    template_name = 'waiters/waiter_detail.html'
+    context_object_name = 'waiter'
+
+
+class WaiterUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
+    model = Waiter
+    fields = ['name', 'employee_id', 'phone']
+    template_name = 'waiters/waiter_form.html'
+    success_url = reverse_lazy('waiter_list')
+
+
+class WaiterDeleteView(LoginRequiredMixin, DeleteView):
+    model = Waiter
+    success_url = reverse_lazy('waiter_list')
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if request.is_ajax():
+            return JsonResponse({'message':'Deleted'})
+        return super().delete(request, *args, **kwargs)

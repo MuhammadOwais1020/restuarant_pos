@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-truck"></i> Suppliers</h1>
+  <a href="{% url 'supplier_create' %}" class="btn">
+    <i class="fa fa-plus"></i> New Supplier
+  </a>
+</div>
+
+<form class="search-bar">
+  <input name="q" placeholder="Search suppliers..." value="{{ request.GET.q|default:'' }}">
+  <button type="submit"><i class="fa fa-search"></i></button>
+</form>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name</th><th>Contact</th><th>Email</th><th>Address</th><th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for sup in suppliers %}
+    <tr id="supplier-{{ sup.pk }}">
+      <td>{{ sup.name }}</td>
+      <td>{{ sup.contact_number|default:'—' }}</td>
+      <td>{{ sup.email|default:'—' }}</td>
+      <td>{{ sup.address|linebreaksbr|default:'—' }}</td>
+      <td>
+        <a href="{% url 'supplier_detail' sup.pk %}"><i class="fa fa-eye"></i></a>
+        <a href="{% url 'supplier_edit' sup.pk %}"><i class="fa fa-edit"></i></a>
+        <button class="btn-delete" data-url="{% url 'supplier_delete' sup.pk %}">
+          <i class="fa fa-trash"></i>
+        </button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">No suppliers found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  function getCookie(name) {
+    let v = document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+    return v ? v.pop() : '';
+  }
+  $.ajaxSetup({ headers: {'X-CSRFToken': getCookie('csrftoken')} });
+
+  $('.btn-delete').click(function(){
+    const url = $(this).data('url');
+    const row = '#supplier-' + url.split('/').slice(-2)[0];
+    if(confirm('Delete this supplier?')) {
+      $.post(url, {}, () => {
+        showAlert('success','Deleted');
+        $(row).remove();
+      });
+    }
+  });
+</script>
+{% endblock %}

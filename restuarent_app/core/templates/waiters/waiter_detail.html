@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Waiter Detail{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-user-tie"></i> {{ waiter.name }}</h1>
+  <a href="{% url 'waiter_list' %}" class="btn">
+    <i class="fa fa-arrow-left"></i> Back
+  </a>
+</div>
+
+<div class="detail-container">
+  <p><strong>Name:</strong> {{ waiter.name }}</p>
+  <p><strong>Employee ID:</strong> {{ waiter.employee_id }}</p>
+  <p><strong>Phone:</strong> {{ waiter.phone|default:"—" }}</p>
+  <p><strong>Hired on:</strong> {{ waiter.created_at|date:"Y-m-d H:i" }}</p>
+</div>
+{% endblock %}

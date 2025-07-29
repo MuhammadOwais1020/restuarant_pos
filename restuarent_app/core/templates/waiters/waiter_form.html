@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}
+  {% if view.object %}Edit Waiter{% else %}New Waiter{% endif %}
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>
+    {% if view.object %}<i class="fa fa-edit"></i> Edit Waiter
+    {% else %}<i class="fa fa-plus"></i> New Waiter{% endif %}
+  </h1>
+  <a href="{% url 'waiter_list' %}" class="btn">
+    <i class="fa fa-arrow-left"></i> Back
+  </a>
+</div>
+
+<form id="waiter-form" method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit" class="btn-submit btn">
+    <i class="fa fa-save"></i> Save
+  </button>
+</form>
+
+<script>
+  $('#waiter-form').submit(function(e){
+    e.preventDefault();
+    const fd = new FormData(this);
+    $.ajax({
+      url: window.location.href,
+      method: 'POST',
+      data: fd,
+      processData: false,
+      contentType: false,
+      success: () => {
+        showAlert('success','Saved');
+        setTimeout(()=> window.location.href="{% url 'waiter_list' %}", 500);
+      },
+      error: xhr => {
+        const errs = xhr.responseJSON || {};
+        Object.values(errs).flat().forEach(msg => showAlert('error', msg));
+      }
+    });
+  });
+</script>
+{% endblock %}
+

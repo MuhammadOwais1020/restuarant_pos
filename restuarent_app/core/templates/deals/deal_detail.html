@@ -13,6 +13,7 @@
   {% endif %}
   <p><strong>Description:</strong> {{ deal.description }}</p>
   <p><strong>Price:</strong> {{ deal.price }}</p>
+  <p><strong>Food Panda Price:</strong> {{ deal.food_panda_price|default:"0" }}</p>
   <p><strong>Available:</strong> {{ deal.is_available|yesno:'Yes,No' }}</p>
 
   <h3><i class="fa fa-box"></i> Items in Deal</h3>

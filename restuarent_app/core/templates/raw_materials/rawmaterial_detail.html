@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-cogs"></i> {{ material.name }}</h1>
+  <a href="{% url 'raw_material_list' %}" class="btn"><i class="fa fa-arrow-left"></i> Back</a>
+</div>
+
+<p><strong>Unit:</strong> {{ material.unit }}</p>
+<p><strong>Supplier:</strong> {{ material.supplier.name }}</p>
+<p><strong>Current Stock:</strong> {{ material.current_stock }}</p>
+<p><strong>Reorder Level:</strong> {{ material.reorder_level }}</p>
+
+<h3><i class="fa fa-exchange-alt"></i> Transactions</h3>
+<ul>
+  {% for tx in material.transactions.all|dictsortreversed:"timestamp" %}
+    <li>
+      {{ tx.timestamp|date:"Y-m-d H:i" }} –
+      {{ tx.get_transaction_type_display }}:
+      {{ tx.quantity }} {{ material.unit }}
+    </li>
+  {% empty %}
+    <li>No transactions yet.</li>
+  {% endfor %}
+</ul>
+
+<a href="{% url 'raw_material_edit' material.pk %}" class="btn"><i class="fa fa-edit"></i> Edit</a>
+{% endblock %}

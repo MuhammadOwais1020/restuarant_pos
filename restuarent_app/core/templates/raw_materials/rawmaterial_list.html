@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block extra_head %}
+<style>
+  .low-stock { background-color: rgba(255,0,0,0.1); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-cogs"></i> Raw Materials</h1>
+  <a href="{% url 'raw_material_create' %}" class="btn"><i class="fa fa-plus"></i> New Material</a>
+</div>
+
+<form class="search-bar">
+  <input name="q" placeholder="Search raw materials..." value="{{ request.GET.q|default:'' }}">
+  <button type="submit"><i class="fa fa-search"></i></button>
+</form>
+
+<table class="table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Unit</th>
+      <th>Supplier</th>
+      <th>Stock</th>
+      <th>Reorder Level</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for mat in materials %}
+    <tr id="material-{{ mat.pk }}" class="{% if mat.current_stock <= mat.reorder_level %}low-stock{% endif %}">
+      <td>{{ mat.name }}</td>
+      <td>{{ mat.unit }}</td>
+      <td>{{ mat.supplier.name }}</td>
+      <td>{{ mat.current_stock }}</td>
+      <td>{{ mat.reorder_level }}</td>
+      <td>
+        <a href="{% url 'raw_material_detail' mat.pk %}"><i class="fa fa-eye"></i></a>
+        <a href="{% url 'raw_material_edit' mat.pk %}"><i class="fa fa-edit"></i></a>
+        <button class="btn-delete" data-url="{% url 'raw_material_delete' mat.pk %}">
+          <i class="fa fa-trash"></i>
+        </button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6">No raw materials found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+  function getCookie(n){ let v=document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)'); return v? v.pop():''; }
+  $.ajaxSetup({ headers:{ 'X-CSRFToken': getCookie('csrftoken') } });
+  $('.btn-delete').click(function(){
+    const url = $(this).data('url'),
+          row = '#material-'+url.split('/').slice(-2)[0];
+    if(confirm('Delete this material?')) {
+      $.post(url, {}, ()=>{ showAlert('success','Deleted'); $(row).remove(); });
+    }
+  });
+</script>
+{% endblock %}

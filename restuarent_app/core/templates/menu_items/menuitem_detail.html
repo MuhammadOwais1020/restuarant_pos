@@ -4,6 +4,7 @@
 <img src="{{ item.image.url }}" width="150">
 <p><strong>Category:</strong> {{ item.category.name }}</p>
 <p><strong>Price:</strong> {{ item.price }}</p>
+<p><strong>Food Panda Price:</strong> {{ item.food_panda_price|default:"0" }}</p>
 <p><strong>Available:</strong> {{ item.is_available|yesno:'Yes,No' }}</p>
 <p>{{ item.description }}</p>
 <a href="{% url 'menuitem_edit' item.pk %}" class="btn"><i class="fa fa-edit"></i> Edit</a>

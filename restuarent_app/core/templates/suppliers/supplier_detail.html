@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-truck"></i> {{ supplier.name }}</h1>
+  <a href="{% url 'supplier_list' %}" class="btn"><i class="fa fa-arrow-left"></i> Back</a>
+</div>
+
+<p><strong>Contact:</strong> {{ supplier.contact_number|default:'—' }}</p>
+<p><strong>Email:</strong> {{ supplier.email|default:'—' }}</p>
+<p><strong>Address:</strong><br>{{ supplier.address|linebreaksbr|default:'—' }}</p>
+
+<a href="{% url 'supplier_edit' supplier.pk %}" class="btn"><i class="fa fa-edit"></i> Edit</a>
+{% endblock %}

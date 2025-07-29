@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
 SITE_ID = 1
 
 BASE_DIR = Path(__file__).resolve().parent.parent

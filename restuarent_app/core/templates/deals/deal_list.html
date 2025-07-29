@@ -20,6 +20,7 @@
       <th>Image</th>
       <th>Name</th>
       <th>Price</th>
+      <th>Food Panda Price</th>
       <th>Available</th>
       <th>Actions</th>
     </tr>
@@ -36,6 +37,7 @@
       </td>
       <td>{{ deal.name }}</td>
       <td>{{ deal.price }}</td>
+      <td>{{ deal.food_panda_price|default:"" }}</td>
       <td>{{ deal.is_available|yesno:'Yes,No' }}</td>
       <td>
         <a href="{% url 'deal_detail' deal.pk %}"><i class="fa fa-eye"></i></a>

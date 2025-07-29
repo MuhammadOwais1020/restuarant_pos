@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h1>Cost Report – {{ today }}</h1>
+
+<h2>Menu Items</h2>
+<table class="table">
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Avg Cost Price</th>
+      <th>Sold Qty Today</th>
+      <th>Total Cost Today</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in item_rows %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ r.avg_cost_price|floatformat:2 }}</td>
+      <td>{{ r.sold_qty_today }}</td>
+      <td>{{ r.total_cost_today|floatformat:2 }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Deals</h2>
+<table class="table">
+  <thead>
+    <tr>
+      <th>Deal</th>
+      <th>Avg Cost Price</th>
+      <th>Sold Qty Today</th>
+      <th>Total Cost Today</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in deal_rows %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ r.avg_cost_price|floatformat:2 }}</td>
+      <td>{{ r.sold_qty_today }}</td>
+      <td>{{ r.total_cost_today|floatformat:2 }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

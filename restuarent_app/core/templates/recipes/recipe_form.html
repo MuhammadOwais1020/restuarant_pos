@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% block content %}
+  {% if view.object %}
+    <h1><i class="fa fa-edit"></i> Edit Recipe</h1>
+  {% else %}
+    <h1><i class="fa fa-plus"></i> New Recipe</h1>
+  {% endif %}
+
+  <form id="recipe-form" method="post">
+    {% csrf_token %}
+    <div>
+      <label for="id_menu_item">Menu Item</label>
+      {{ form.menu_item }}
+    </div>
+    <div>
+      <label for="id_name">Recipe Name (optional)</label>
+      {{ form.name }}
+    </div>
+
+    <h3>Raw Materials</h3>
+    <table class="table">
+      <thead><tr>
+        <th>#</th><th>Material</th><th>Quantity</th><th>Unit</th><th>Action</th>
+      </tr></thead>
+      <tbody id="raw-container"></tbody>
+    </table>
+    <button type="button" id="add-raw" class="btn">
+      <i class="fa fa-plus"></i> Add Material
+    </button>
+
+    <h3 style="margin-top:1rem;">Sub‑Recipes</h3>
+    <table class="table">
+      <thead><tr>
+        <th>#</th><th>Recipe</th><th>Quantity</th><th>Unit</th><th>Action</th>
+      </tr></thead>
+      <tbody id="sub-container"></tbody>
+    </table>
+    <button type="button" id="add-sub" class="btn">
+      <i class="fa fa-plus"></i> Add Sub‑Recipe
+    </button>
+
+    <input type="hidden" name="raw_json" id="id_raw_json">
+    <input type="hidden" name="sub_json" id="id_sub_json">
+
+    <button type="submit" class="btn-submit" style="margin-top:1rem;">
+      <i class="fa fa-save"></i> Save Recipe
+    </button>
+  </form>
+
+  <script>
+ const materials = {{ raw_materials_json|safe }};
+  const units     = {{ units_json|safe }};
+  const recipes   = {{ recipes_json|safe }};
+  let raws        = {{ initial_raw_json|default:"[]"|safe }};
+  let subs        = {{ initial_sub_json|default:"[]"|safe }};
+
+  function renderRaw(){
+    const tb = $('#raw-container').empty();
+    raws.forEach((it,i) => {
+      tb.append(`
+        <tr data-i="${i}">
+          <td>${i+1}</td>
+          <td>
+            <select class="sel-raw">
+              ${materials.map(m =>
+                `<option value="${m.pk}" ${m.pk === it.raw_material_id ? 'selected' : ''}>${m.name}</option>`
+              ).join('')}
+            </select>
+          </td>
+          <td><input type="number" class="inp-raw-qty" min="0.01" step="0.01" value="${it.quantity}"></td>
+          <td>
+            <select class="sel-raw-unit">
+              ${units.map(u =>
+                `<option value="${u.pk}" ${u.pk === it.unit_id ? 'selected' : ''}>${u.symbol}</option>`
+              ).join('')}
+            </select>
+          </td>
+          <td>
+            <button type="button" class="btn-remove-raw"><i class="fa fa-trash"></i></button>
+          </td>
+        </tr>
+      `);
+    });
+  }
+
+  function renderSub(){
+    const tb = $('#sub-container').empty();
+    subs.forEach((it,i) => {
+      tb.append(`
+        <tr data-i="${i}">
+          <td>${i+1}</td>
+          <td>
+            <select class="sel-sub-recipe">
+              ${recipes.map(r =>
+                `<option value="${r.pk}" ${r.pk === it.sub_recipe_id ? 'selected' : ''}>${r.name}</option>`
+              ).join('')}
+            </select>
+          </td>
+          <td><input type="number" class="inp-sub-qty" min="0.01" step="0.01" value="${it.quantity}"></td>
+          <td>
+            <select class="sel-sub-unit">
+              ${units.map(u =>
+                `<option value="${u.pk}" ${u.pk === it.unit_id ? 'selected' : ''}>${u.symbol}</option>`
+              ).join('')}
+            </select>
+          </td>
+          <td>
+            <button type="button" class="btn-remove-sub"><i class="fa fa-trash"></i></button>
+          </td>
+        </tr>
+      `);
+    });
+  }
+
+  // Add raw-material row
+  $('#add-raw').click(() => {
+    if (!materials.length) {
+      return showAlert('error', 'No raw materials available. Please create some first.');
+    }
+    if (!units.length) {
+      return showAlert('error', 'No units defined. Please add at least one unit.');
+    }
+    raws.push({
+      raw_material_id: materials[0].pk,
+      quantity:        1,
+      unit_id:         units[0].pk
+    });
+    renderRaw();
+  });
+
+  // Add sub-recipe row
+  $('#add-sub').click(() => {
+    if (!recipes.length) {
+      return showAlert('error', 'No recipes available to nest. Create a recipe first.');
+    }
+    if (!units.length) {
+      return showAlert('error', 'No units defined. Please add at least one unit.');
+    }
+    subs.push({
+      sub_recipe_id: recipes[0].pk,
+      quantity:      1,
+      unit_id:       units[0].pk
+    });
+    renderSub();
+  });
+
+  // Remove or change raw-material rows
+  $('#raw-container')
+    .on('click', '.btn-remove-raw', function() {
+      const i = +$(this).closest('tr').data('i');
+      raws.splice(i, 1);
+      renderRaw();
+    })
+    .on('change', '.sel-raw, .inp-raw-qty, .sel-raw-unit', function() {
+      const row = $(this).closest('tr'), i = +row.data('i');
+      raws[i].raw_material_id = +row.find('.sel-raw').val();
+      raws[i].quantity        = +row.find('.inp-raw-qty').val();
+      raws[i].unit_id         = +row.find('.sel-raw-unit').val();
+    });
+
+  // Remove or change sub-recipe rows
+  $('#sub-container')
+    .on('click', '.btn-remove-sub', function() {
+      const i = +$(this).closest('tr').data('i');
+      subs.splice(i, 1);
+      renderSub();
+    })
+    .on('change', '.sel-sub-recipe, .inp-sub-qty, .sel-sub-unit', function() {
+      const row = $(this).closest('tr'), i = +row.data('i');
+      subs[i].sub_recipe_id = +row.find('.sel-sub-recipe').val();
+      subs[i].quantity      = +row.find('.inp-sub-qty').val();
+      subs[i].unit_id       = +row.find('.sel-sub-unit').val();
+    });
+
+  // Handle form submission via AJAX
+  $('#recipe-form').submit(function(e) {
+    e.preventDefault();
+    $('#id_raw_json').val(JSON.stringify(raws));
+    $('#id_sub_json').val(JSON.stringify(subs));
+    const fd = new FormData(this);
+    $.ajax({
+      url: window.location.href,
+      method: 'POST',
+      data: fd,
+      processData: false,
+      contentType: false,
+      success: () => {
+        showAlert('success', 'Recipe saved');
+        setTimeout(() => location.href = "{% url 'recipe_list' %}", 500);
+      },
+      error: xhr => {
+        Object.values(xhr.responseJSON || {}).flat()
+          .forEach(m => showAlert('error', m));
+      }
+    });
+  });
+
+  // Initial render
+  $(document).ready(() => {
+    renderRaw();
+    renderSub();
+  });
+</script>
+
+{% endblock %}

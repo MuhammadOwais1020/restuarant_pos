@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-header">
+  <h1><i class="fa fa-book-open"></i> Recipes</h1>
+  <a href="{% url 'recipe_create' %}" class="btn"><i class="fa fa-plus"></i> New Recipe</a>
+</div>
+
+<form class="search-bar">
+  <input name="q" placeholder="Search by Menu Item..." value="{{ request.GET.q|default:'' }}">
+  <button type="submit"><i class="fa fa-search"></i></button>
+</form>
+
+<table class="table">
+  <thead><tr>
+    <th>Menu Item</th><th>Name</th><th>Actions</th>
+  </tr></thead>
+  <tbody>
+    {% for r in recipes %}
+    <tr id="recipe-{{ r.pk }}">
+      <td>{{ r.menu_item.name }}</td>
+      <td>{{ r.name|default:"—" }}</td>
+      <td>
+        <a href="{% url 'recipe_detail' r.pk %}"><i class="fa fa-eye"></i></a>
+        <a href="{% url 'recipe_edit' r.pk %}"><i class="fa fa-edit"></i></a>
+        <button class="btn-delete" data-url="{% url 'recipe_delete' r.pk %}">
+          <i class="fa fa-trash"></i>
+        </button>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="3">No recipes yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<script>
+function gc(n){let m=document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');return m?m.pop():'';}
+$.ajaxSetup({ headers:{ 'X-CSRFToken': gc('csrftoken') } });
+$('.btn-delete').click(function(){
+  const url=$(this).data('url'), row='#recipe-'+url.split('/').slice(-2)[0];
+  if(confirm('Delete this recipe?')){
+    $.post(url,{},()=>{showAlert('success','Deleted');$(row).remove();});
+  }
+});
+</script>
+{% endblock %}

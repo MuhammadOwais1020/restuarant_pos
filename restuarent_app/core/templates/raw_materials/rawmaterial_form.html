@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+  {% if view.object %}
+    <h1><i class="fa fa-edit"></i> Edit Raw Material</h1>
+  {% else %}
+    <h1><i class="fa fa-plus"></i> New Raw Material</h1>
+  {% endif %}
+
+  <form id="material-form" method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit" class="btn-submit">
+      <i class="fa fa-save"></i> Save
+    </button>
+  </form>
+
+  <script>
+    $('#material-form').submit(function(e){
+      e.preventDefault();
+      let fd = new FormData(this);
+      $.ajax({
+        url: window.location.href,
+        method: 'POST',
+        data: fd,
+        processData: false,
+        contentType: false,
+        success: ()=> {
+          showAlert('success','Saved');
+          setTimeout(()=> window.location.href="{% url 'raw_material_list' %}",500);
+        },
+        error: (xhr)=> {
+          const errs = xhr.responseJSON || {};
+          Object.values(errs).flat().forEach(msg=> showAlert('error', msg));
+        }
+      });
+    });
+  </script>
+{% endblock %}
