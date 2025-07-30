@@ -3,44 +3,98 @@
 
 <div class="page-header">
   <h1>Menu Items</h1>
-  <a href="{% url 'menuitem_create' %}" class="btn"><i class="fa fa-plus"></i> New Item</a>
+  <a href="{% url 'menuitem_create' %}" class="btn">
+    <i class="fa fa-plus"></i> New Item
+  </a>
 </div>
+
 <form class="search-bar">
   <input name="q" placeholder="Search items..." value="{{ request.GET.q }}">
   <button type="submit"><i class="fa fa-search"></i></button>
 </form>
+
 <table class="table">
-  <thead><tr><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Food Panda Price</th><th>Avail.</th><th>Actions</th></tr></thead>
+  <thead>
+    <tr>
+      <th>Image</th><th>Name</th><th>Category</th>
+      <th>Price</th><th>Food Panda Price</th><th>Avail.</th><th>Actions</th>
+    </tr>
+  </thead>
   <tbody>
     {% for item in items %}
     <tr id="item-{{ item.pk }}">
-        <td>
-      {% if item.image %}
-        <img src="{{ item.image.url }}" width="50">
-      {% else %}
-        <span>No Image</span>
-      {% endif %}
-    </td>
+      <td>
+        {% if item.image %}
+          <img src="{{ item.image.url }}" width="50">
+        {% else %}
+          <span>No Image</span>
+        {% endif %}
+      </td>
       <td>{{ item.name }}</td>
       <td>{{ item.category.name }}</td>
       <td>{{ item.price }}</td>
       <td>{{ item.food_panda_price|default:"" }}</td>
       <td>{{ item.is_available|yesno:'Yes,No' }}</td>
       <td>
-        <a href="{% url 'menuitem_detail' item.pk %}"><i class="fa fa-eye"></i></a>
-        <a href="{% url 'menuitem_edit' item.pk %}"><i class="fa fa-edit"></i></a>
-        <button class="btn-delete" data-url="{% url 'menuitem_delete' item.pk %}"><i class="fa fa-trash"></i></button>
+        <a href="{% url 'menuitem_detail' item.pk %}">
+          <i class="fa fa-eye"></i>
+        </a>
+        <a href="{% url 'menuitem_edit' item.pk %}">
+          <i class="fa fa-edit"></i>
+        </a>
+        <button class="btn-delete" data-url="{% url 'menuitem_delete' item.pk %}">
+          <i class="fa fa-trash"></i>
+        </button>
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="6">No items.</td></tr>
+    <tr><td colspan="7">No items.</td></tr>
     {% endfor %}
   </tbody>
 </table>
+
+{# ── CSRF + AJAX setup ─────────────────────────────────────────────── #}
 <script>
+// Django’s recommended way to get the CSRF token from cookies
+function getCookie(name) {
+  let cookieValue = null;
+  if (document.cookie && document.cookie !== '') {
+    document.cookie.split(';').forEach(cookie => {
+      cookie = cookie.trim();
+      if (cookie.startsWith(name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+      }
+    });
+  }
+  return cookieValue;
+}
+const csrftoken = getCookie('csrftoken');
+
+// Tell jQuery to send the token in the header of all non‑GET AJAX requests
+$.ajaxSetup({
+  beforeSend: (xhr, settings) => {
+    if (!(/^GET|HEAD|OPTIONS|TRACE$/i.test(settings.type))) {
+      xhr.setRequestHeader("X-CSRFToken", csrftoken);
+    }
+  }
+});
+
+// Now your delete handler will automatically carry the CSRF token
 $('.btn-delete').click(function(){
-  let url=$(this).data('url'), row='#item-'+url.split('/').slice(-2)[0];
-  if(confirm('Delete?')){ $.post(url, {}, ()=>{showAlert('success','Deleted');$(row).remove();}); }
+  const url = $(this).data('url');
+  const row = '#item-' + url.split('/').slice(-3, -2)[0];
+
+  if (!confirm('Delete this menu item?')) {
+    return;
+  }
+
+  $.post(url, {}, () => {
+    showAlert('success','Deleted');
+    $(row).remove();
+  }).fail((xhr) => {
+    showAlert('error','Delete failed: '+xhr.statusText);
+  });
 });
 </script>
+
 {% endblock %}

@@ -425,7 +425,7 @@ class OrderCreateView(LoginRequiredMixin, View):
         table_id = data.get("table_id")
         is_food_panda = data.get("source")
         waiter_id = data.get("waiter_id") or None
-        isHomeDelivery = data.get("isHomeDelivery") or None
+        is_home_delivery = data.get("isHomeDelivery") or None
 
         source_value =  is_food_panda
 
@@ -439,8 +439,8 @@ class OrderCreateView(LoginRequiredMixin, View):
             service_charge=service_charge,
             status=status_value,
             source=source_value,
-            waiter_id=waiter_id,
-            isHomeDelivery = isHomeDelivery,
+            waiter=waiter_id,
+            is_home_delivery = is_home_delivery,
         )
 
         if table_id and status_value != "paid":
@@ -502,7 +502,7 @@ class OrderCreateView(LoginRequiredMixin, View):
                 except Exception as e:
                     return JsonResponse({"error": f"Print failed: {e}"}, status=500)
 
-            return JsonResponse({"message": "Order Created", "order_id": order.id})
+        return JsonResponse({"message": "Order Created", "order_id": order.id})
 
 # core/views.py
 
@@ -614,15 +614,15 @@ class OrderUpdateView(LoginRequiredMixin, View):
 
         # 1) Update order fields
         waiter_id = data.get("waiter_id") or None
-        isHomeDelivery = data.get("isHomeDelivery") or None
+        is_home_delivery = data.get("isHomeDelivery") or None
         order.discount       = data.get("discount", 0) or 0
         order.tax_percentage = data.get("tax_percentage", 0) or 0
         order.service_charge = data.get("service_charge", 0) or 0
-        order.table_id       = data.get("table_id")
+        order.table_id     = data.get("table_id")
         action               = data.get("action", "update")
         order.status         = "paid" if action == "paid" else "pending"
         order.waiter_id = waiter_id
-        order.isHomeDelivery = isHomeDelivery
+        order.is_home_delivery = is_home_delivery
         order.save()
 
         # 2) Table occupancy
@@ -758,7 +758,9 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
     now_str = order.created_at.strftime("%Y-%m-%d %H:%M").encode("ascii")
     lines.append(esc + b"\x61" + b"\x00")   # left align
     lines.append(b"Date: " + now_str + b"\n")
-    lines.append(b"Waiter: " + order.waiter.name + b"\n")
+    if order.waiter:
+        waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
+        lines.append(waiter_bytes)
     lines.append(b"-" * 32 + b"\n")         # 32-char full width separator
 
 
@@ -777,97 +779,6 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
 
     return b"".join(lines)
 
-
-# def build_token_bytes(order):
-#     esc = b"\x1B"
-#     gs  = b"\x1D"
-
-#     lines = []
-
-#     # ----------------------------------------------------------------
-#     # 1) Double‐sized Restaurant Name, centered
-#     # ----------------------------------------------------------------
-#     lines.append(esc + b"\x61" + b"\x01")   # ESC a 1  → center
-#     lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x30 → double height & width
-#     lines.append(b"MR FOOD\n")
-#     lines.append(esc + b"\x21" + b"\x00")   # ESC ! 0x00 → back to normal
-#     lines.append(b"\n")
-
-#     # ----------------------------------------------------------------
-#     # 2) “KITCHEN TOKEN” header, centered (normal size)
-#     # ----------------------------------------------------------------
-#     lines.append(esc + b"\x61" + b"\x01")   # center
-#     lines.append(b"KITCHEN TOKEN\n")
-#     lines.append(b"\n")
-
-#     # ----------------------------------------------------------------
-#     # 3) “TOKEN #” line in double‐height × double‐width
-#     # ----------------------------------------------------------------
-#     token_str = str(order.token_number)
-#     lines.append(esc + b"\x61" + b"\x01")   # center
-#     lines.append(esc + b"\x21" + b"\x30")   # double h×w
-#     lines.append(b"TOKEN # " + token_str.encode("ascii") + b"\n")
-#     lines.append(esc + b"\x21" + b"\x00")   # back to normal
-#     lines.append(b"\n")
-
-#     # ----------------------------------------------------------------
-#     # 4) Date/time, left‐aligned
-#     # ----------------------------------------------------------------
-#     lines.append(esc + b"\x61" + b"\x01")   # center
-#     now_str = order.created_at.strftime("%Y-%m-%d %H:%M")
-#     lines.append(b"Date: " + now_str.encode("ascii") + b"\n")
-
-#     # ----------------------------------------------------------------
-#     # 5) Full‐width dashed separator
-#     #    – Adjust the count of “-” to match your printer's character width.
-#     #    – Here we use 32 hyphens for a typical 32‐column thermal printer.
-#     # ----------------------------------------------------------------
-#     lines.append(b"\n")
-
-#     # ----------------------------------------------------------------
-#     # 6) “Item                 Qty” header (32 characters total)
-#     #      (ITEM_COL_WIDTH + QTY_COL_WIDTH = 32)
-#     # ----------------------------------------------------------------
-#     ITEM_COL_WIDTH = 24
-#     QTY_COL_WIDTH = 8
-
-#     header_item = b"Item".ljust(ITEM_COL_WIDTH)
-#     header_qty  = b"Qty".rjust(QTY_COL_WIDTH)
-#     lines.append(header_item + header_qty + b"\n")
-
-#     # Another dashed line below the header
-#     lines.append(b"----------------------------------------\n")
-
-#     # ----------------------------------------------------------------
-#     # 7) List each OrderItem:
-#     #      Name left‐justified (up to 24 chars), quantity right‐justified (8 chars)
-#     # ----------------------------------------------------------------
-#     for oi in order.items.all():
-#         # Determine the name (menu_item.name or deal.name)
-#         name = (oi.menu_item.name if oi.menu_item else oi.deal.name)
-#         # Truncate to ITEM_COL_WIDTH if needed, then left‐justify
-#         name_trunc = name[:ITEM_COL_WIDTH]
-#         name_field = name_trunc.ljust(ITEM_COL_WIDTH).encode("ascii", "ignore")
-
-#         # Quantity as string, right‐justify into QTY_COL_WIDTH
-#         qty_field = str(oi.quantity).rjust(QTY_COL_WIDTH).encode("ascii")
-
-#         lines.append(name_field + qty_field + b"\n")
-
-#     lines.append(b"\n")
-
-#     # ----------------------------------------------------------------
-#     # 8) Final dashed line at the bottom
-#     # ----------------------------------------------------------------
-#     lines.append(b"----------------------------------------\n")
-#     lines.append(b"\n\n\n\n\n\n\n\n")
-
-#     # ----------------------------------------------------------------
-#     # 9) Cut paper (full cut)
-#     # ----------------------------------------------------------------
-#     lines.append(gs + b"\x56" + b"\x00")    # GS V 0
-
-#     return b"".join(lines)
 
 
 def build_bill_bytes(order, is_food_panda = "walk_in"):
@@ -980,96 +891,6 @@ def build_bill_bytes(order, is_food_panda = "walk_in"):
     return b"".join(lines)
 
 
-# def build_bill_bytes(order):
-#     """
-#     Build a customer‐facing bill (ESC/POS) payload with perfectly
-#     aligned columns under "Item", "Qty", "Price", "Total".
-#     Assumes a 40-character-wide printer (dashed lines of length 40).
-#     """
-#     esc = b"\x1B"
-#     gs  = b"\x1D"
-#     lines = []
-
-#     # 1) Restaurant name in double size, centered
-#     lines.append(esc + b"\x61" + b"\x01")   # ESC a 1 → Center
-#     lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x30 → double height & width
-#     lines.append(b"MR. FOOD\n")
-#     lines.append(esc + b"\x21" + b"\x00")   # ESC ! 0x00 → back to normal size
-#     lines.append(b"\n")
-
-#     # 2) Order metadata, left-aligned
-#     order_number_str = str(order.number)
-#     token_str = str(order.token_number)
-#     dt = order.created_at.strftime("%Y-%m-%d %H:%M")
-
-#     lines.append(esc + b"\x61" + b"\x00")   # ESC a 0 → Align left
-#     lines.append(b"Order #: " + order_number_str.encode("ascii") + b"\n")
-#     lines.append(b"Date:    " + dt.encode("ascii") + b"\n")
-#     lines.append(b"Token #: " + token_str.encode("ascii") + b"\n")
-#     lines.append(b"-" * 48 + b"\n")         # 40 dashes as separator
-
-#     # 3) Column headers (bold)
-#     lines.append(esc + b"\x45" + b"\x01")   # ESC E 1 → bold ON
-#     # f"{'Item':<16}{'Qty':>4}{'Price':>8}{'Total':>8}\n"
-#     header = f"{'Item':<22}{'Qty':>4}{'Price':>9}{'Total':>9}\n"
-#     lines.append(header.encode("ascii"))
-#     lines.append(esc + b"\x45" + b"\x00")   # ESC E 0 → bold OFF
-#     lines.append(b"-" * 48 + b"\n")         # another 40-dash separator
-
-#     # 4) Each OrderItem – same widths as header
-#     subtotal = 0.0
-#     for oi in order.items.all():
-#         # Take first 16 chars of item name (or deal name)
-#         raw_name = oi.menu_item.name if oi.menu_item else oi.deal.name
-#         name = raw_name[:22].ljust(22)      # left-pad/truncate to 16 chars
-#         qty = oi.quantity
-#         # unit_price might be Decimal, so force float
-#         unit_price_f = int(oi.unit_price)
-#         line_total_f = int(oi.quantity * oi.unit_price)
-#         subtotal += line_total_f
-
-#         # Build one line in exactly 16 + 4 + 8 + 8 = 36 chars; remainder is just spaces.
-#         # Format: |<16 chars item>|<4-char qty>|<8-char price>|<8-char total>|
-#         line = f"{name}{qty:>4}{unit_price_f:>9}{line_total_f:>9}\n"
-#         lines.append(line.encode("ascii"))
-
-#     # 5) Footer-style separator
-#     lines.append(b"-" * 48 + b"\n\n")
-
-#     # 6) Totals
-#     discount_f = float(order.discount)
-#     tax_perc_f = float(order.tax_percentage)
-#     service_f = float(order.service_charge)
-#     tax_amt_f = (subtotal - discount_f) * (tax_perc_f / 100.0)
-#     grand_f = (subtotal - discount_f) + tax_amt_f + service_f
-
-#     lines.append(b"Subtotal:    " + f"{subtotal:>8.2f}".encode("ascii") + b"\n")
-#     lines.append(b"Discount:    " + f"{discount_f:>8.2f}".encode("ascii") + b"\n")
-#     lines.append(
-#         b"Tax (" + f"{tax_perc_f:.0f}".encode("ascii") + b"%)   " +
-#         f"{tax_amt_f:>8.2f}".encode("ascii") + b"\n"
-#     )
-#     lines.append(b"Service:     " + f"{service_f:>8.2f}".encode("ascii") + b"\n")
-#     lines.append(esc + b"\x45" + b"\x01")   # bold ON for grand total
-#     lines.append(b"Grand Total: " + f"{grand_f:>8.2f}".encode("ascii") + b"\n")
-#     lines.append(esc + b"\x45" + b"\x00")   # bold OFF
-#     lines.append(b"\n")
-
-#     # 7) Footer / Branding
-#     lines.append(b"-" * 48 + b"\n")
-#     lines.append(esc + b"\x61" + b"\x01")   # center
-#     lines.append(b"Barkat Smart POS Systems\n")
-#     lines.append(b"Powered by Qonkar Technologies\n\n")
-#     lines.append(b"Har Business ky liye Software Available Hain\n\n")
-#     lines.append(b"Contact: (+92) 305 8214945\n")
-#     lines.append(b"www.qonkar.com\n")
-#     lines.append(b"Thank you!\n\n\n\n\n\n")
-#     lines.append(b"\n" * 4)
-
-#     # 8) CUT PAPER (full cut)
-#     lines.append(gs + b"\x56" + b"\x00")    # GS V 0
-
-#     return b"".join(lines)
 from django.views.decorators.http import require_http_methods
 
 @require_http_methods(["GET", "POST"])
