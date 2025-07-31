@@ -1,0 +1,93 @@
+{# templates/debug_cost.html #}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Debug Cost Breakdown</title>
+  <style>
+    table { border-collapse: collapse; width: 100%; margin-bottom: 2em; }
+    th, td { border: 1px solid #ccc; padding: 0.5em; text-align: left; }
+    th { background: #f7f7f7; }
+    .subrecipes { margin-left: 2em; }
+  </style>
+</head>
+<body>
+  <h1>Cost Debug Breakdown</h1>
+  {% for item in items_debug %}
+    <h2>{{ item.menu_item.name }}</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Raw Material</th><th>Recipe Qty</th><th>Unit</th>
+          <th>→ Base Qty</th><th>Avg Cost/base</th><th>Line Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for rl in item.detail.raw_lines %}
+        <tr>
+          <td>{{ rl.name }}</td>
+          <td>{{ rl.recipe_qty }}</td>
+          <td>{{ rl.unit }}</td>
+          <td>{{ rl.base_qty }}</td>
+          <td>{{ rl.avg_cost }}</td>
+          <td>{{ rl.line_cost }}</td>
+        </tr>
+        <tr>
+          <td colspan="6">
+            <em>Purchase lines for {{ rl.name }}:</em>
+            <table>
+              <tr>
+                <th>PO Qty</th><th>Unit Price</th>
+                <th>To Base</th><th>Base Qty</th><th>Line Cost</th>
+              </tr>
+              {% for po in rl.po_lines %}
+                <tr>
+                  <td>{{ po.po_qty }}</td>
+                  <td>{{ po.po_unit_price }}</td>
+                  <td>{{ po.po_to_base_factor }}</td>
+                  <td>{{ po.po_base_qty }}</td>
+                  <td>{{ po.po_line_cost }}</td>
+                </tr>
+              {% endfor %}
+            </table>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    {% if item.detail.subrecipes %}
+      <div class="subrecipes">
+        <h3>Sub-Recipes</h3>
+        {% for sub in item.detail.subrecipes %}
+          <h4>{{ sub.name }} × {{ sub.qty }}</h4>
+          <table>
+            <thead>
+              <tr>
+                <th>Raw Material</th><th>Recipe Qty</th>
+                <th>→ Base Qty</th><th>Avg Cost/base</th><th>Line Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for rl in sub.detail.raw_lines %}
+              <tr>
+                <td>{{ rl.name }}</td>
+                <td>{{ rl.recipe_qty }}</td>
+                <td>{{ rl.base_qty }}</td>
+                <td>{{ rl.avg_cost }}</td>
+                <td>{{ rl.line_cost }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          <p><strong>Sub-total:</strong> {{ sub.sub_cost }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <p><strong>Total Cost for {{ item.menu_item.name }}:</strong>
+       {{ item.detail.total }}</p>
+    <hr>
+  {% endfor %}
+</body>
+</html>

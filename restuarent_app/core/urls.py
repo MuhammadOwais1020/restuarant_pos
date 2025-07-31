@@ -160,7 +160,7 @@ urlpatterns += [
 from django.urls import path
 from .views import (
     WaiterListView, WaiterCreateView, WaiterDetailView,
-    WaiterUpdateView, WaiterDeleteView,
+    WaiterUpdateView, WaiterDeleteView, debug_costs
     # … your other imports …
 )
 
@@ -173,4 +173,6 @@ urlpatterns += [
     path('waiters/<int:pk>/', WaiterDetailView.as_view(), name='waiter_detail'),
     path('waiters/<int:pk>/edit/',  WaiterUpdateView.as_view(), name='waiter_edit'),
     path('waiters/<int:pk>/delete/',WaiterDeleteView.as_view(), name='waiter_delete'),
+
+    path('debug-cost/', debug_costs, name='debug_costs'),
 ]

@@ -25,6 +25,7 @@
       <th>Supplier</th>
       <th>Stock</th>
       <th>Reorder Level</th>
+      <th>Avg Unit Price</th>
       <th>Actions</th>
     </tr>
   </thead>
@@ -36,6 +37,13 @@
       <td>{{ mat.supplier.name }}</td>
       <td>{{ mat.current_stock }}</td>
       <td>{{ mat.reorder_level }}</td>
+      <td>
+          {% if mat.avg_unit_price %}
+            {{ mat.avg_unit_price }}
+          {% else %}
+            &mdash;
+          {% endif %}
+        </td>
       <td>
         <a href="{% url 'raw_material_detail' mat.pk %}"><i class="fa fa-eye"></i></a>
         <a href="{% url 'raw_material_edit' mat.pk %}"><i class="fa fa-edit"></i></a>

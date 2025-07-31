@@ -327,7 +327,7 @@ class Supplier(models.Model):
 
 class RawMaterial(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    unit = models.CharField(max_length=50, help_text="E.g. kg, liter, pcs")
+    unit = models.CharField(max_length=50, help_text="E.g. kg, liter, pc")
     current_stock = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     reorder_level = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="materials")
@@ -353,7 +353,7 @@ class PurchaseOrder(models.Model):
     status      = models.CharField(max_length=20,
                                    choices=[('pending','Pending'),
                                             ('received','Received')],
-                                   default='pending')
+                                   default='received')
 
     def __str__(self):
         return f"PO #{self.id} - {self.supplier.name}"

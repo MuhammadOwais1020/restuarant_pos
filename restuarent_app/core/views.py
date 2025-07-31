@@ -4,11 +4,12 @@ from django.contrib.auth import authenticate, login, logout
 from .license_check import enforce_authorization
 from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin
-from .models import InventoryTransaction, PrintStatus, PurchaseOrder, RawMaterial, Recipe
+from .models import InventoryTransaction, PrintStatus, PurchaseOrder, RawMaterial, Recipe, RecipeRawMaterial, RecipeSubRecipe
 from django.views.decorators.http import require_POST
+from .models import Unit
 
 from .printing import send_to_printer
-
+from .utils import recipe_cost_and_weight
 
 import json
 from decimal import Decimal
@@ -21,7 +22,6 @@ from .models import (
     PurchaseOrderItem,
     MenuItem, Deal
 )
-
 
 class LoginView(View):
     def get(self, request):
@@ -390,7 +390,7 @@ class OrderCreateView(LoginRequiredMixin, View):
             })
         all_deals_json = json.dumps(deals_list)
 
-        existing_items_json = json.dumps([])
+        initial_po_items_json = json.dumps([])
 
         # Annotate tables with pending totals and has_items flag
         tables = list(Table.objects.all().order_by("number"))
@@ -404,7 +404,7 @@ class OrderCreateView(LoginRequiredMixin, View):
             "categories": categories,
             "all_menu_items_json": all_menu_items_json,
             "all_deals_json": all_deals_json,
-            "existing_items_json": existing_items_json,
+            "initial_po_items_json": initial_po_items_json,
             "order": None,
             "tables": tables,
             "waiters_json": waiters_json,
@@ -584,7 +584,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
                     "quantity": oi.quantity,
                     "unit_price": float(oi.unit_price)
                 })
-        existing_items_json = json.dumps(existing_items)
+        initial_po_items_json = json.dumps(existing_items)
 
         # Annotate tables
         tables = list(Table.objects.all().order_by("number"))
@@ -598,7 +598,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
             "categories":          categories,
             "all_menu_items_json": all_menu_items_json,
             "all_deals_json":      all_deals_json,
-            "existing_items_json": existing_items_json,
+            "initial_po_items_json": initial_po_items_json,
             "order":               order,
             "tables":              tables,
             "waiters_json": waiters_json,
@@ -709,6 +709,7 @@ class OrderDeleteView(LoginRequiredMixin, AjaxableResponseMixin, DeleteView):
 
 
 from decimal import Decimal
+from .utils import compute_recipe_cost
 
 import os
 from django.conf import settings
@@ -1324,6 +1325,9 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from .models import RawMaterial
 from .views import AjaxableResponseMixin  # your existing mixin
 
+from django.db.models import Sum, F, ExpressionWrapper, DecimalField, Q
+
+
 # --- Raw Materials CRUD ---
 class RawMaterialListView(LoginRequiredMixin, ListView):
     model = RawMaterial
@@ -1334,7 +1338,26 @@ class RawMaterialListView(LoginRequiredMixin, ListView):
     def get_queryset(self):
         qs = super().get_queryset().select_related('supplier').order_by('-created_at')
         q = self.request.GET.get('q')
-        return qs.filter(name__icontains=q) if q else qs
+        if q:
+            qs = qs.filter(name__icontains=q)
+        # annotate average unit price from received PurchaseOrderItems
+        qs = qs.annotate(
+            total_cost=Sum(
+                F('purchaseorderitem__quantity') * F('purchaseorderitem__unit_price'),
+                filter=Q(purchaseorderitem__purchase_order__status='received'),
+                output_field=DecimalField(max_digits=14, decimal_places=2)
+            ),
+            total_qty=Sum(
+                'purchaseorderitem__quantity',
+                filter=Q(purchaseorderitem__purchase_order__status='received')
+            )
+        ).annotate(
+            avg_unit_price=ExpressionWrapper(
+                F('total_cost') / F('total_qty'),
+                output_field=DecimalField(max_digits=14, decimal_places=2)
+            )
+        )
+        return qs
 
 class RawMaterialCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = RawMaterial
@@ -1499,37 +1522,6 @@ def purchase_order_receive(request, pk):
     po.mark_received()
     return JsonResponse({'status':'success'})
 
-
-def get_avg_unit_cost(raw_material):
-    agg = PurchaseOrderItem.objects.filter(
-        purchase_order__status='received',
-        raw_material=raw_material
-    ).aggregate(
-        total_cost=Sum(F('quantity') * F('unit_price')),
-        total_qty=Sum('quantity')
-    )
-    total_cost = agg['total_cost'] or Decimal('0')
-    total_qty  = agg['total_qty']  or Decimal('0')
-    return (total_cost / total_qty) if total_qty else Decimal('0')
-
-def recipe_cost(recipe):
-    cost = Decimal('0')
-    # raw-material ingredients
-    for ingr in recipe.raw_ingredients.all():
-        rm    = ingr.raw_material
-        # find conversion to base unit (e.g. grams)
-        conv  = RawMaterialUnitConversion.objects.get(
-                    raw_material=rm, unit=ingr.unit
-               ).to_base_factor
-        qty   = ingr.quantity * Decimal(conv)
-        avg_c = get_avg_unit_cost(rm)
-        cost += qty * avg_c
-    # nested sub-recipes
-    for sub in recipe.subrecipes.all():
-        cost += recipe_cost(sub.sub_recipe) * Decimal(sub.quantity)
-    return cost
-
-
 from decimal import Decimal
 from datetime import date
 
@@ -1553,10 +1545,14 @@ class CostReportView(LoginRequiredMixin, TemplateView):
         today = date.today()
 
         # reuse compute_recipe_cost for menu items
+        # now uses the new weight-aware logic
         item_rows = []
-        for mi in MenuItem.objects.prefetch_related('recipe__raw_ingredients',
-                                                      'recipe__subrecipes__sub_recipe'):
-            cost = compute_recipe_cost(mi.recipe) if hasattr(mi, 'recipe') else Decimal('0')
+        for mi in MenuItem.objects.prefetch_related(
+                 'recipe__raw_ingredients', 'recipe__subrecipes__sub_recipe'):
+            if hasattr(mi, 'recipe'):
+                 cost = compute_recipe_cost(mi.recipe)
+            else:
+                 cost = Decimal('0')
             sold = OrderItem.objects.filter(menu_item=mi,
                                             order__created_at__date=today)\
                                      .aggregate(q=Sum('quantity'))['q'] or 0
@@ -1588,121 +1584,6 @@ class CostReportView(LoginRequiredMixin, TemplateView):
         })
         return ctx
 
-#recipe
-
-import json
-from decimal import Decimal
-from django.urls import reverse_lazy
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-from django.views.generic import (
-    ListView, CreateView, DetailView, UpdateView, DeleteView
-)
-from django.contrib.auth.mixins import LoginRequiredMixin
-from .views import AjaxableResponseMixin
-from .models import (
-    Recipe, RecipeRawMaterial, RecipeSubRecipe,
-    RawMaterial, RawMaterialUnitConversion,
-    InventoryTransaction, MenuItem, Unit
-)
-
-# core/views.py (at top of file)
-import json
-from decimal import Decimal
-from django.db.models import Sum, F, DecimalField
-from .models import (
-    RawMaterial,
-    RawMaterialUnitConversion,
-    Unit,
-    PurchaseOrderItem,
-    Recipe, RecipeRawMaterial, RecipeSubRecipe
-)
-
-from decimal import Decimal, getcontext
-from django.db import models
-
-from .models import (
-    RawMaterialUnitConversion,
-    PurchaseOrderItem,
-    RawMaterial,
-    Unit,
-)
-
-# bump precision a bit
-getcontext().prec = 28
-
-def compute_recipe_cost(recipe):
-    """
-    1) Build a (raw_material, unit) → base‑factor map
-    2) For each raw_material in this recipe, scan ALL its PO‑lines:
-         • convert each PO.quantity into base units
-         • sum cost = qty * unit_price
-       then avg_cost_per_base = total_cost ÷ total_base_qty
-    3) Multiply each ingredient’s recipe.quantity (in its own unit) 
-       × that same base factor × avg_cost_per_base
-    4) Recurse into any sub‑recipes
-    """
-    # 1) load all unit conversions into memory
-    convs = {
-        (c.raw_material_id, c.unit_id): Decimal(c.to_base_factor)
-        for c in RawMaterialUnitConversion.objects.all()
-    }
-
-    # helper to get the average cost per **base** unit for a given raw_material
-    _cache = {}
-    def cost_per_base(rm_id):
-        if rm_id in _cache:
-            return _cache[rm_id]
-
-        # gather all PO‑lines for this material
-        pois = PurchaseOrderItem.objects.filter(raw_material_id=rm_id)
-        total_cost = Decimal('0')
-        total_base_qty = Decimal('0')
-
-        # figure out which unit they used on purchase
-        raw = RawMaterial.objects.get(pk=rm_id)
-        try:
-            pu = Unit.objects.get(symbol=raw.unit)
-        except Unit.DoesNotExist:
-            # fallback: assume 1:1
-            pu = None
-
-        for poi in pois:
-            q = Decimal(poi.quantity)
-            p = Decimal(poi.unit_price)
-            total_cost += q * p
-
-            # convert that PO quantity into base units
-            if pu:
-                factor = convs.get((rm_id, pu.pk), Decimal('1'))
-            else:
-                factor = Decimal('1')
-            total_base_qty += q * factor
-
-        avg = (total_cost / total_base_qty) if total_base_qty else Decimal('0')
-        _cache[rm_id] = avg
-        return avg
-
-    # 2) now compute this recipe’s cost
-    total = Decimal('0')
-    for ingr in recipe.raw_ingredients.all():
-        rm_id = ingr.raw_material_id
-        qty   = Decimal(ingr.quantity)
-
-        # convert recipe qty → base
-        factor = convs.get((rm_id, ingr.unit_id), Decimal('1'))
-        base_qty = qty * factor
-
-        # cost per base
-        cpb = cost_per_base(rm_id)
-        total += base_qty * cpb
-
-    # 3) nested sub‑recipes
-    for sub in recipe.subrecipes.all():
-        sub_cost = compute_recipe_cost(sub.sub_recipe)
-        total   += sub_cost * Decimal(sub.quantity)
-
-    return total.quantize(Decimal('0.01'))
 
 # --- List & Detail ---
 class RecipeListView(LoginRequiredMixin, ListView):
@@ -1932,3 +1813,116 @@ class WaiterDeleteView(LoginRequiredMixin, DeleteView):
         if request.is_ajax():
             return JsonResponse({'message':'Deleted'})
         return super().delete(request, *args, **kwargs)
+
+
+# core/views.py
+from django.shortcuts import render
+from decimal import Decimal, getcontext
+
+from .models import MenuItem, RawMaterialUnitConversion, PurchaseOrderItem
+
+# bump precision a bit
+getcontext().prec = 28
+
+def debug_costs(request):
+    # 1) Build conversion map: (raw_material_id, unit_symbol) -> to_base_factor
+    convs = {
+        (c.raw_material_id, c.unit.symbol): Decimal(c.to_base_factor)
+        for c in RawMaterialUnitConversion.objects.select_related('unit').all()
+    }
+
+    # 2) Helper: average cost per **base** unit (g, ml, pcs) for a raw material
+    _cache = {}
+    def cost_per_base(rm_id):
+        if rm_id in _cache:
+            return _cache[rm_id]
+        pois = PurchaseOrderItem.objects.filter(raw_material_id=rm_id)
+        total_cost = Decimal('0')
+        total_base = Decimal('0')
+        for poi in pois:
+            q      = Decimal(poi.quantity)
+            p      = Decimal(poi.unit_price)
+            symbol = poi.raw_material.unit             # e.g. 'kg' or 'pcs'
+            factor = convs.get((rm_id, symbol), Decimal('1'))
+            total_base += q * factor
+            total_cost += q * p
+        avg = (total_cost / total_base) if total_base else Decimal('0')
+        _cache[rm_id] = avg
+        return avg
+
+    # 3) Recursive breakdown of a recipe
+    def breakdown_recipe(recipe):
+        raw_lines = []
+        for ingr in recipe.raw_ingredients.select_related('raw_material','unit').all():
+            rm        = ingr.raw_material
+            qty       = Decimal(ingr.quantity)
+            symbol    = ingr.unit.symbol
+            factor    = convs.get((rm.id, symbol), Decimal('1'))
+            base_qty  = qty * factor
+            avg_cost  = cost_per_base(rm.id)
+            line_cost = base_qty * avg_cost
+
+            # collect PO‐lines for inspection
+            po_lines = []
+            for poi in PurchaseOrderItem.objects.filter(raw_material_id=rm.id):
+                pq     = Decimal(poi.quantity)
+                pp     = Decimal(poi.unit_price)
+                pf     = convs.get((rm.id, rm.unit), Decimal('1'))
+                po_lines.append({
+                    'po_qty':            pq,
+                    'po_unit_price':     pp,
+                    'po_to_base_factor': pf,
+                    'po_base_qty':       pq * pf,
+                    'po_line_cost':      pq * pp,
+                })
+
+            raw_lines.append({
+                'name':       rm.name,
+                'unit':       symbol,
+                'recipe_qty': qty,
+                'to_base':    factor,
+                'base_qty':   base_qty,
+                'avg_cost':   avg_cost,
+                'line_cost':  line_cost,
+                'po_lines':   po_lines,
+            })
+
+        subrecipes = []
+        for sub in recipe.subrecipes.select_related('sub_recipe').all():
+            sr = sub.sub_recipe
+            detail = breakdown_recipe(sr)
+            # cost of the FULL sub‐recipe definition
+            sub_full_cost = sum(r['line_cost'] for r in detail['raw_lines'])
+            # now scale per‐gram
+            req = Decimal(sub.quantity)  # interpreted as grams
+            per_g = (sub_full_cost / sum(r['base_qty'] for r in detail['raw_lines'])
+                     ) if detail['raw_lines'] else Decimal('0')
+            subrecipes.append({
+                'name':     sr.menu_item.name,
+                'qty':      req,
+                'detail':   detail,
+                'sub_cost': (per_g * req).quantize(Decimal('0.01')),
+            })
+
+        total = sum(r['line_cost'] for r in raw_lines) \
+              + sum(s['sub_cost']    for s in subrecipes)
+        return {
+            'raw_lines':  raw_lines,
+            'subrecipes': subrecipes,
+            'total':      total.quantize(Decimal('0.01')),
+        }
+
+    # 4) Assemble per‐MenuItem
+    items_debug = []
+    for mi in MenuItem.objects.select_related('recipe').all():
+        if not hasattr(mi, 'recipe'):
+            continue
+        detail = breakdown_recipe(mi.recipe)
+        items_debug.append({
+            'menu_item': mi,
+            'detail':    detail,
+        })
+
+    return render(request, 'debug_cost.html', {
+        'items_debug': items_debug,
+    })

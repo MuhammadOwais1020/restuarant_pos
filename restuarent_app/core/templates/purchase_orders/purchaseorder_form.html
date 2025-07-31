@@ -32,7 +32,7 @@
 
   <script>
     const materials = JSON.parse('{{ raw_materials_json|safe }}');
-    let lines = JSON.parse('{{ initial_po_items|safe }}');
+    let lines = {{ initial_po_items_json|safe }};
 
     function fmt(x){return parseFloat(x).toFixed(2);}
     function render(){
