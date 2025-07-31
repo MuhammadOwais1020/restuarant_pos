@@ -1618,8 +1618,9 @@ from .models import (
     Recipe, RecipeRawMaterial, RecipeSubRecipe
 )
 
-from decimal import Decimal
-from django.db.models import Sum, F, DecimalField
+from decimal import Decimal, getcontext
+from django.db import models
+
 from .models import (
     RawMaterialUnitConversion,
     PurchaseOrderItem,
@@ -1627,50 +1628,79 @@ from .models import (
     Unit,
 )
 
+# bump precision a bit
+getcontext().prec = 28
+
 def compute_recipe_cost(recipe):
-    # 1) Build conversion map (unit → base grams or ml)
+    """
+    1) Build a (raw_material, unit) → base‑factor map
+    2) For each raw_material in this recipe, scan ALL its PO‑lines:
+         • convert each PO.quantity into base units
+         • sum cost = qty * unit_price
+       then avg_cost_per_base = total_cost ÷ total_base_qty
+    3) Multiply each ingredient’s recipe.quantity (in its own unit) 
+       × that same base factor × avg_cost_per_base
+    4) Recurse into any sub‑recipes
+    """
+    # 1) load all unit conversions into memory
     convs = {
         (c.raw_material_id, c.unit_id): Decimal(c.to_base_factor)
         for c in RawMaterialUnitConversion.objects.all()
     }
 
-    # 2) Average cost per *gram* for each raw material
-    stats = PurchaseOrderItem.objects.values('raw_material_id')\
-        .annotate(
-            total_cost=Sum(F('unit_price') * F('quantity'), output_field=DecimalField()),
-            total_qty =Sum('quantity', output_field=DecimalField())
-        )
+    # helper to get the average cost per **base** unit for a given raw_material
+    _cache = {}
+    def cost_per_base(rm_id):
+        if rm_id in _cache:
+            return _cache[rm_id]
 
-    avg_cost_per_g = {}
-    for s in stats:
-        rm_id = s['raw_material_id']
-        tot_c = s['total_cost'] or Decimal('0')
-        tot_q = s['total_qty']  or Decimal('0')
+        # gather all PO‑lines for this material
+        pois = PurchaseOrderItem.objects.filter(raw_material_id=rm_id)
+        total_cost = Decimal('0')
+        total_base_qty = Decimal('0')
 
-        # Figure out how many grams one PO‑unit represents
-        base_symbol = RawMaterial.objects.get(pk=rm_id).unit
-        pu = Unit.objects.get(symbol=base_symbol)
-        grams_per_pu = convs.get((rm_id, pu.pk), Decimal('1'))
+        # figure out which unit they used on purchase
+        raw = RawMaterial.objects.get(pk=rm_id)
+        try:
+            pu = Unit.objects.get(symbol=raw.unit)
+        except Unit.DoesNotExist:
+            # fallback: assume 1:1
+            pu = None
 
-        if tot_q > 0:
-            # (cost ÷ qty) = cost per PU; ÷ grams_per_pu = cost per gram
-            avg_cost_per_g[rm_id] = (tot_c / tot_q) / grams_per_pu
-        else:
-            avg_cost_per_g[rm_id] = Decimal('0')
+        for poi in pois:
+            q = Decimal(poi.quantity)
+            p = Decimal(poi.unit_price)
+            total_cost += q * p
 
-    # 3) Sum raw‐ingredient costs
+            # convert that PO quantity into base units
+            if pu:
+                factor = convs.get((rm_id, pu.pk), Decimal('1'))
+            else:
+                factor = Decimal('1')
+            total_base_qty += q * factor
+
+        avg = (total_cost / total_base_qty) if total_base_qty else Decimal('0')
+        _cache[rm_id] = avg
+        return avg
+
+    # 2) now compute this recipe’s cost
     total = Decimal('0')
     for ingr in recipe.raw_ingredients.all():
-        rm     = ingr.raw_material
-        qty    = Decimal(ingr.quantity)
-        factor = convs.get((rm.id, ingr.unit_id), Decimal('1'))
-        # convert recipe‑unit → grams
-        grams  = qty * factor
-        total += grams * avg_cost_per_g.get(rm.id, Decimal('0'))
+        rm_id = ingr.raw_material_id
+        qty   = Decimal(ingr.quantity)
 
-    # 4) Include sub‑recipes
+        # convert recipe qty → base
+        factor = convs.get((rm_id, ingr.unit_id), Decimal('1'))
+        base_qty = qty * factor
+
+        # cost per base
+        cpb = cost_per_base(rm_id)
+        total += base_qty * cpb
+
+    # 3) nested sub‑recipes
     for sub in recipe.subrecipes.all():
-        total += compute_recipe_cost(sub.sub_recipe) * Decimal(sub.quantity)
+        sub_cost = compute_recipe_cost(sub.sub_recipe)
+        total   += sub_cost * Decimal(sub.quantity)
 
     return total.quantize(Decimal('0.01'))
 
