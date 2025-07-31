@@ -733,7 +733,7 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
 
     # ─── Restaurant name, larger/bold ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")   # center alignment
-    lines.append(esc + b"\x21" + b"\x30")   # double height & width
+    # lines.append(esc + b"\x21" + b"\x30")   # double height & width
     lines.append(b"Cafe Kunj\n")
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
@@ -1146,8 +1146,8 @@ def build_token_bytes_for_deltas(order, items_with_delta):
     
     # ─── Restaurant name, larger/bold ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")   # center alignment
-    lines.append(esc + b"\x21" + b"\x30")   # double height & width
-    lines.append(b"MR FOOD\n")
+    # lines.append(esc + b"\x21" + b"\x30")   # double height & width
+    lines.append(b"Cafe Kunj\n")
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
 
@@ -1413,6 +1413,15 @@ class PurchaseOrderListView(LoginRequiredMixin, ListView):
             return qs.filter(supplier__name__icontains=q)
         return qs
 
+import json
+from django.urls import reverse_lazy
+from django.views.generic import CreateView, UpdateView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import JsonResponse
+
+from .models import RawMaterial, PurchaseOrder, PurchaseOrderItem
+from .views import AjaxableResponseMixin  # your existing mixin
+
 class PurchaseOrderCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = PurchaseOrder
     fields = ['supplier']
@@ -1427,13 +1436,14 @@ class PurchaseOrderCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateV
             {'pk': rm.pk, 'name': rm.name, 'unit': rm.unit}
             for rm in rms
         ])
-        ctx['initial_po_items'] = []
+        # no existing items on create
+        ctx['initial_po_items_json'] = json.dumps([])
         return ctx
 
     def form_valid(self, form):
         form.instance.created_by = self.request.user
         resp = super().form_valid(form)
-        data = json.loads(self.request.POST.get('po_items_json','[]'))
+        data = json.loads(self.request.POST.get('po_items_json', '[]'))
         total = 0
         for it in data:
             qty = it['quantity']
@@ -1457,12 +1467,14 @@ class PurchaseOrderUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateV
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        # serialize raw materials
         rms = RawMaterial.objects.select_related('supplier').order_by('name')
         ctx['raw_materials_json'] = json.dumps([
             {'pk': rm.pk, 'name': rm.name, 'unit': rm.unit}
             for rm in rms
         ])
-        ctx['initial_po_items'] = [
+        # existing line items → JSON for JS
+        existing_items = [
             {
                 'raw_material_id': pi.raw_material_id,
                 'quantity': float(pi.quantity),
@@ -1470,18 +1482,19 @@ class PurchaseOrderUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateV
             }
             for pi in self.object.items.all()
         ]
+        ctx['initial_po_items_json'] = json.dumps(existing_items)
         return ctx
 
     def form_valid(self, form):
         # delete old items
         PurchaseOrderItem.objects.filter(purchase_order=self.object).delete()
         resp = super().form_valid(form)
-        data = json.loads(self.request.POST.get('po_items_json','[]'))
+        data = json.loads(self.request.POST.get('po_items_json', '[]'))
         total = 0
         for it in data:
             qty = it['quantity']
             up  = it['unit_price']
-            poi = PurchaseOrderItem.objects.create(
+            PurchaseOrderItem.objects.create(
                 purchase_order=self.object,
                 raw_material_id=it['raw_material_id'],
                 quantity=qty,
@@ -1491,6 +1504,7 @@ class PurchaseOrderUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateV
         self.object.total_cost = total
         self.object.save()
         return resp
+
 
 class PurchaseOrderDetailView(LoginRequiredMixin, DetailView):
     model = PurchaseOrder
