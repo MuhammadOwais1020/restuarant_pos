@@ -218,7 +218,7 @@ class OrderItem(models.Model):
 
     def line_total(self):
         return self.quantity * self.unit_price
-
+    
     def update_inventory_usage(self):
         # only do this for a menu_item that actually has a recipe
         if not self.menu_item:
@@ -229,22 +229,28 @@ class OrderItem(models.Model):
         except Recipe.DoesNotExist:
             return
 
-        # loop each raw‐material line on the recipe
-        for ingr in recipe.raw_ingredients.all():
-            # ingr.quantity is in ingr.unit (e.g. 'g', 'kg', 'tbsp', etc.)
-            conv = ingr.unit.to_base_factor     # e.g. 250g → 250; 1kg→1000
-            # total raw needed = (recipe‐line qty * unit→base) × order quantity
-            used_qty = (Decimal(ingr.quantity) * Decimal(conv)) * self.quantity
+        # loop each raw-material line on the recipe
+        for ingr in recipe.raw_ingredients.select_related('raw_material', 'unit').all():
+            # look up the conversion factor for this raw_material + unit
+            try:
+                conv_obj = RawMaterialUnitConversion.objects.get(
+                    raw_material=ingr.raw_material,
+                    unit=ingr.unit
+                )
+                conv = Decimal(conv_obj.to_base_factor)
+            except RawMaterialUnitConversion.DoesNotExist:
+                # fallback to 1:1 if no conversion is defined
+                conv = Decimal('1')
+
+            # total raw needed = (recipe-line qty × unit→base) × order quantity
+            used_qty = Decimal(ingr.quantity) * conv * self.quantity
 
             InventoryTransaction.objects.create(
-                raw_material        = ingr.raw_material,
-                transaction_type    = 'out',
-                quantity            = used_qty,
-                order_item          = self,
-                notes               = (
-                    f"Used in {self.menu_item.name} "
-                    f"(Order #{self.order.number})"
-                )
+                raw_material     = ingr.raw_material,
+                transaction_type = 'out',
+                quantity         = used_qty,
+                order_item       = self,
+                notes            = f"Used in {self.menu_item.name} (Order #{self.order.number})"
             )
 
     def save(self, *args, **kwargs):
