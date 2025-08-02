@@ -10,7 +10,7 @@ SECRET_KEY = 'replace-with-secure-key'
 DEBUG = True
 ALLOWED_HOSTS = ['*', '192.168.0.2']
 
-RESTAURANT_NAME = "MR. Food"
+RESTAURANT_NAME = "Cafe Kunj"
 # Optionally:
 LOGO_PATH = os.path.join(BASE_DIR, "staticfiles", "images", "logo.png")
 
@@ -59,6 +59,7 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+
     }
 }
 
@@ -70,6 +71,7 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Asia/Karachi'
 USE_I18N = True
 USE_TZ = True
+
 
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 

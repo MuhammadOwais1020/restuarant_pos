@@ -20,11 +20,12 @@ from .escpos_test import(
 
 from .views import (
     SupplierListView, SupplierCreateView,
-    SupplierDetailView, SupplierUpdateView, SupplierDeleteView,
+    SupplierDetailView, SupplierUpdateView, SupplierDeleteView, close_order
 )
 
 urlpatterns = [
-
+        
+    path('orders/close_order/', close_order, name='close_order'),   
     path(
         "",
         RedirectView.as_view(pattern_name="login", permanent=False),
@@ -175,4 +176,16 @@ urlpatterns += [
     path('waiters/<int:pk>/delete/',WaiterDeleteView.as_view(), name='waiter_delete'),
 
     path('debug-cost/', debug_costs, name='debug_costs'),
+]
+
+
+from .views import (
+    TableSessionView, TableItemsView,
+    ClearTableItemsView, TablePrintTokenView
+)
+urlpatterns += [
+    path('tables/<int:table_id>/session/', TableSessionView.as_view(), name='table_session'),
+    path('tables/<int:table_id>/items/', TableItemsView.as_view(), name='table_items'),
+    path('tables/<int:table_id>/items/clear/', ClearTableItemsView.as_view(), name='clear_table_items'),
+    path('tables/<int:table_id>/print-token/', TablePrintTokenView.as_view(), name='print_token'),
 ]

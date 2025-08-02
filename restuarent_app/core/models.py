@@ -3,6 +3,9 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 
+import logging
+logger = logging.getLogger(__name__)
+
 # ---------- User & Roles (unchanged) ----------
 class User(AbstractUser):
     ROLE_CHOICES = [
@@ -176,17 +179,20 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order #{self.number} – {self.get_status_display()}"
-
+    
     def save(self, *args, **kwargs):
+        logger.debug(f"Order save started for {self.number} at {timezone.now()}")
         # Auto-generate order.number if blank (e.g., ORD20250531-0001)
+        if not self.created_at:
+            self.created_at = timezone.localtime(timezone.now())  # Ensure the datetime is timezone-aware
         if not self.number:
-            today = timezone.localdate()
+            today = timezone.localtime(timezone.now())  # Make sure this is timezone-aware
             prefix = today.strftime("ORD%Y%m%d")
             existing_today = Order.objects.filter(number__startswith=prefix).count() + 1
             self.number = f"{prefix}-{existing_today:04d}"
 
             # Determine token number: resets at 12:00 PM
-            now = timezone.localtime()
+            now = timezone.localtime(timezone.now())  # Get local time (timezone-aware)
             if now.hour < 12:
                 # Count yesterday’s tokens
                 yesterday = today - timezone.timedelta(days=1)
@@ -203,6 +209,7 @@ class Order(models.Model):
                 ).order_by('-token_number').first()
                 self.token_number = (last_token.token_number if last_token else 0) + 1
 
+        logger.debug(f"Token number set to {self.token_number}")
         super().save(*args, **kwargs)
 
 from decimal import Decimal
@@ -218,7 +225,7 @@ class OrderItem(models.Model):
 
     def line_total(self):
         return self.quantity * self.unit_price
-    
+
     def update_inventory_usage(self):
         # only do this for a menu_item that actually has a recipe
         if not self.menu_item:
@@ -254,14 +261,16 @@ class OrderItem(models.Model):
             )
 
     def save(self, *args, **kwargs):
-        self.update_inventory_usage()
+        # Save the OrderItem first
         super().save(*args, **kwargs)
+        
+        # Then update inventory usage
+        self.update_inventory_usage()
 
     def __str__(self):
         if self.deal:
             return f"{self.quantity} x {self.deal.name} (Deal)"
         return f"{self.quantity} x {self.menu_item.name}"
-
 
 # ---------- Payments & Billing ----------
 class Payment(models.Model):
@@ -270,7 +279,7 @@ class Payment(models.Model):
         ('card', 'Card'),
     ]
     order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='payment')
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     method = models.CharField(max_length=10, choices=PAYMENT_METHODS)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -505,3 +514,48 @@ def seed_unit_conversions(sender, instance, created, **kwargs):
             defaults={'to_base_factor': factor}
         )
 
+
+
+from django.db import models
+from django.utils import timezone
+
+class TableSession(models.Model):
+    table = models.OneToOneField(
+        'Table', on_delete=models.CASCADE, related_name='session'
+    )
+    waiter = models.ForeignKey(
+        'Waiter', on_delete=models.PROTECT, related_name='table_sessions',
+        null=True, blank=True
+    )
+    home_delivery = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Table {self.table.number} Session"
+
+class TableMenuItem(models.Model):
+    TABLE_SOURCE_CHOICES = [
+        ('menu', 'MenuItem'),
+        ('deal', 'Deal'),
+    ]
+    session = models.ForeignKey(
+        TableSession, on_delete=models.CASCADE, related_name='picked_items', null=True, blank=True
+    )
+    source_type = models.CharField(max_length=10, choices=TABLE_SOURCE_CHOICES)
+    source_id = models.PositiveIntegerField()
+    quantity = models.PositiveIntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    printed_quantity = models.PositiveIntegerField(default=0, blank=True, null=True)
+
+    def get_source_object(self):
+        if self.source_type == 'menu':
+            return MenuItem.objects.get(pk=self.source_id)
+        return Deal.objects.get(pk=self.source_id)
+
+    class Meta:
+        unique_together = ('session', 'source_type', 'source_id')
+
+    def __str__(self):
+        label = 'Menu' if self.source_type=='menu' else 'Deal'
+        return f"Table {self.session.table.number}: {self.quantity} x {label}({self.source_id})"

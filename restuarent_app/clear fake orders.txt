@@ -1,0 +1,9 @@
+from core.models import Order, OrderItem, Payment, InventoryTransaction
+
+# Deleting all related records in a specific order sequence to avoid foreign key integrity issues
+OrderItem.objects.all().delete()  # Delete all order items first, as they are related to Order
+Payment.objects.all().delete()    # Then delete all payments, as they are related to Order
+InventoryTransaction.objects.all().delete()  # Delete all inventory transactions related to orders
+Order.objects.all().delete()      # Finally, delete all orders
+
+# Optionally, if you want to delete other related models (like RawMaterial, etc.), you can do so as well

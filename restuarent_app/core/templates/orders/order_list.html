@@ -2,6 +2,108 @@
 {% block title %}Orders{% endblock %}
 
 {% block content %}
+
+<style>
+/* Modal Styles */
+.modal {
+    display: none;  /* Hidden by default */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+    z-index: 1050;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.3s ease; /* Smooth fade-in transition */
+}
+
+/* When modal is shown */
+.modal.show {
+    display: flex;
+    opacity: 1;  /* Fully visible */
+}
+
+/* Modal Content */
+.modal-content {
+    background-color: #fff;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 100%;
+    padding: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Modal Header */
+.modal-header {
+    padding: 15px;
+    border-radius: 8px 8px 0 0;
+    display: flex;
+    justify-content: space-between;
+}
+
+.modal-title {
+    font-size: 20px;
+    font-weight: bold;
+}
+
+/* Modal Body */
+.modal-body {
+    padding: 20px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-control {
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    padding: 10px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Payment Button */
+.btn-submit-payment {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.btn-submit-payment:hover {
+    background-color: #218838;
+}
+
+/* Close Button */
+.btn-close-order {
+    background-color: #dc3545; /* Bootstrap danger button color */
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.btn-close-order:hover {
+    background-color: #c82333;
+}
+
+/* Overlay Background */
+.modal-backdrop {
+    background: rgba(0, 0, 0, 0.5); /* Dark background for overlay */
+}
+</style>
+
 <div class="page-header">
   <h1><i class="fa fa-receipt"></i> Orders</h1>
   <a href="{% url 'order_create' %}" class="btn">
@@ -15,6 +117,7 @@
       <th>#</th>
       <th>Table</th>
       <th>Status</th>
+      <th>Payment</th>
       <th>Created At</th>
       <th>Token #</th>
       <th>Subtotal</th>
@@ -33,7 +136,19 @@
           &ndash;
         {% endif %}
       </td>
+      
       <td>{{ order.get_status_display }}</td>
+      <td>
+        {% if order.status == 'pending' %}
+          <button class="btn-close-order" 
+                  data-order-id="{{ order.pk }}" 
+                  data-order-total="{{ order.total_amount }}">
+            <i class="fa fa-check"></i> Close Order
+          </button>
+        {% else %}
+          Received
+        {% endif %}
+      </td>
       <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
       <td>{{ order.token_number }}</td>
 
@@ -58,9 +173,7 @@
       <td>
         <a href="{% url 'order_detail' order.pk %}"><i class="fa fa-eye"></i></a>
         <a href="{% url 'order_update' order.pk %}"><i class="fa fa-edit"></i></a>
-        <button class="btn-delete" data-url="{% url 'order_delete' order.pk %}">
-          <i class="fa fa-trash"></i>
-        </button>
+        <button class="btn-delete" data-url="{% url 'order_delete' order.pk %}"><i class="fa fa-trash"></i></button>
       </td>
     </tr>
     {% empty %}
@@ -70,6 +183,7 @@
     {% endfor %}
   </tbody>
 </table>
+
 
 <div class="pagination">
   {% if is_paginated %}
@@ -84,4 +198,87 @@
     {% endif %}
   {% endif %}
 </div>
+
+<!-- Modal for Payment Method -->
+<div id="paymentModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title" id="paymentModalLabel">Close Order - Payment</h5>
+      <button type="button" class="close btn-close" id="closeModal" aria-label="Close">
+        <span aria-hidden="true">&times;</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <form id="paymentForm">
+        <input type="hidden" id="order_id" name="order_id">
+        <div class="form-group">
+          <label for="payment_method">Payment Method</label>
+          <select class="form-control" id="payment_method" name="payment_method">
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="amount">Amount</label>
+          <input type="text" class="form-control" id="amount" name="amount" readonly>
+        </div>
+        <div class="form-group text-center">
+          <button type="submit" class="btn-submit-payment">Submit Payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+document.querySelectorAll('.btn-close-order').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        const orderId = this.getAttribute('data-order-id');
+        const orderTotal = this.getAttribute('data-order-total');
+        document.getElementById('order_id').value = orderId;
+        document.getElementById('amount').value = orderTotal;
+
+        // Show the modal (Add 'show' class)
+        const modal = document.getElementById('paymentModal');
+        modal.classList.add('show');  // Adding the 'show' class to make it visible
+    });
+});
+
+document.getElementById('closeModal').addEventListener('click', function () {
+    // Close the modal (remove the 'show' class)
+    document.getElementById('paymentModal').classList.remove('show');
+});
+
+document.getElementById('paymentForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+
+    const orderId = document.getElementById('order_id').value;
+    const paymentMethod = document.getElementById('payment_method').value;
+    const amount = parseFloat(document.getElementById('amount').value);
+
+    fetch('/orders/close_order/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token }}'
+      },
+      body: JSON.stringify({
+        order_id: orderId,
+        payment_method: paymentMethod,
+        amount: amount
+      })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload();  // Reload the page to update the order status
+      } else {
+        alert(data.error || 'An error occurred.');
+      }
+    });
+});
+
+</script>
 {% endblock %}
+
+
+

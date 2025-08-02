@@ -1,9 +1,5 @@
-{# core/templates/orders/order_form.html #} {% extends 'base.html' %} {% block title %} {% if order %} Edit Order #{{ order.number }} {% else %} New Order {% endif %} {% endblock %} {% block extra_head %}
+{% extends 'base.html' %} {% block title %} {% if order %} Edit Order #{{ order.number }} {% else %} New Order {% endif %} {% endblock %} {% block extra_head %}
 <style>
-  /* --------------------------------------------------------------
-     Order Filling Page Styles (order_form.html)
-     -------------------------------------------------------------- */
-
   :root {
     --color-primary: #ff5722;
     --color-primary-dark: #e64a19;
@@ -267,7 +263,7 @@
   .menu-items-grid {
     overflow-y: auto;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: var(--space-md);
     padding: var(--space-md);
     background: var(--color-bg);
@@ -277,7 +273,6 @@
     background: #fff;
     border-radius: var(--radius-sm);
     text-align: center;
-    padding: var(--space-xs);
     cursor: pointer;
     transition: transform 0.2s;
     display: flex;
@@ -453,7 +448,7 @@
   }
   .tables-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
     gap: var(--space-xs);
   }
   .table-btn {
@@ -543,17 +538,138 @@
     padding-block: 10px;
   }
 
-.table-btn i{
-  font-size: 50px;
-}
+
 .table-btn span{
-  font-size: 18px;
+  font-size: 16px;
   font-weight: bold;
 }
   .container-food-panda, .container-food-panda th{
     background: #FF2B85 !important;
     color: white;
   }
+
+/* General container styling */
+.waiter-selector {
+    padding: 1rem;
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;  /* Space between elements */
+}
+
+/* Label styling */
+.waiter-selector label {
+    font-weight: bold;
+    font-size: 14px;
+    margin-right: 10px;
+}
+
+/* Select box styling */
+.waiter-selector select {
+    padding: .5rem;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    width: auto; /* Auto width for select box */
+}
+
+/* Styling for Payment Method section */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.form-group label {
+    margin-bottom: 8px;
+}
+
+/* Toggle switch container styling */
+.toggle-source {
+    display: flex;
+    align-items: center;
+    gap: 10px;  /* Space between label and toggle */
+}
+
+/* Toggle switch styling */
+.toggle-switch-container {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    border-radius: 50%;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+}
+
+
+.order-items-table {
+  position: relative;   /* needed for the absolute watermark */
+}
+
+.order-items-table .watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 4rem;
+  font-weight: bold;
+  color: rgba(0,0,0,0.1);
+  white-space: nowrap;
+  pointer-events: none; /* clicks pass through */
+  z-index: 0;
+}
+
+.order-items-table table {
+  position: relative;
+  z-index: 1;  /* so the table sits above the watermark */
+}
+
+
+#print-token-btn {
+  margin-left: var(--space-xs);
+  color: #fff;
+}
+#print-token-btn:hover {
+  background: #d35400;
+}
+
 </style>
 {% endblock %} {% block content %}
 <div class="order-container">
@@ -583,14 +699,20 @@
         </button>
         {% endfor %}
 
-        <button class="table-btn{% if not order or not order.table %} selected{% endif %}" data-table-id="">
+        <button class="take-away-button" id="take-away-button" data-table-id="">
           <i class="fa fa-user fa-2x"></i>
           <span>Take Away</span>
         </button>
+
+          <button id="print-token-btn" class="btn-action" style="background: #f39c12;">
+            <i class="fa fa-print"></i> Print Token
+          </button>
       </div>
     </div>
     <!-- Order Items Table (scrollable) -->
     <div class="order-items-table">
+      <!-- watermark overlay -->
+      <div id="order-watermark" class="watermark"></div>
       <table>
         <thead>
           <tr>
@@ -671,11 +793,19 @@
     <!-- BOTTOM 20%: Action Buttons (Reset / Create/Update / New / Paid) -->
     <div class="right-bottom-actions">
       <div class="waiter-selector" style="padding:1rem; background:#fff; border-bottom:1px solid #e0e0e0;">
-      <label for="waiter-select"><strong>Waiter:</strong></label>
+      <div>
+        <label for="waiter-select"><strong>Waiter:</strong></label>
       <select id="waiter-select" style="margin-left:.5rem; padding:.25rem;">
         <option value="">— Unassigned —</option>
       </select>
-
+    </div>
+    <div class="form-group">
+          <label for="payment_method">Payment Method</label>
+          <select class="form-control" id="payment_method" name="payment_method">
+            <option value="cash">Cash</option>
+            <option value="card">Card</option>
+          </select>
+        </div>
       <div class="toggle-source">
             <label class="toggle-switch-container" for="home-delivery">
               <span>Home Delivery Order:</span>
@@ -685,6 +815,7 @@
             </label>
             </label>
       </div>
+
       </div>
       <div class="toggle-actions" style="display:none">
       <div class="toggle-source">
@@ -725,7 +856,7 @@
           <i class="fa fa-save"></i> Update {% else %} <i class="fa fa-cart-plus"></i> Create {% endif %}
         </button>
         <button class="btn-new btn-action" style="display: none"><i class="fa fa-plus-circle"></i> New</button>
-        <button class="btn-paid btn-action"><i class="fa fa-money-bill"></i> Paid</button>
+        <button class="btn-paid btn-action"><i class="fa fa-money-bill"></i> Close / Paid</button>
       </div>
     </div>
   </div>
@@ -746,8 +877,12 @@
 </script>
 
 <script>
+  const watermark = document.getElementById('order-watermark');
   const foodPandaCheckbox = document.getElementById("food-panda-source");
   const homeDelivery = document.getElementById("home-delivery");
+  const takeAwayButton = document.getElementById("take-away-button");
+
+
   // ====== CSRF token helper ======
   function getCookie(name) {
     let cookieValue = null;
@@ -800,7 +935,23 @@
   document.addEventListener("DOMContentLoaded", () => {
     updateItemPrices();
     updateItemAmounts();
-    
+    takeAwayButton.addEventListener('click', function(){
+        const tbody = document.getElementById('order-items-body');
+      tbody.innerHTML = '';
+      document.getElementById('order-watermark').textContent = "Take Away";
+
+      // 1) Clear any previous “table” selection
+  selectedTableId = null;
+
+  // 2) Reset Home-Delivery toggle if you like
+  homeDelivery.checked = false;
+
+  // 3) Clear out the in-memory buffer
+  selectedItems = [];
+takeAwayButton.addEventListener = "Take Away Customer";
+  // 5) Re-render the table
+  renderOrderItemsTable();
+    });
     const foodPandaContainer = document.querySelector('.order-items-table');
 
     foodPandaCheckbox.addEventListener('change', function() { 
@@ -981,11 +1132,10 @@ function formatPrice(price) {
         // If no record exists or error, leave both toggles unchecked (defaults to false).
       });
   });
-</script>
 
-<script>
   // at top of your script you should already have:
   let editingOrderId = {% if order %}{{ order.id }}{% else %}null{% endif %};
+  
   let selectedTableId = null;
   const csrftoken = getCookie('csrftoken');
   const tableButtons = document.querySelectorAll('.table-btn');
@@ -1056,8 +1206,8 @@ allWaiters.forEach(w => {
           badge.className = 'status';
           btn.appendChild(badge);
         }
-        badge.innerText = `₨${subtotal.toFixed(2)}`;
-        btn.classList.add('active');
+          badge.innerText = `₨${subtotal.toFixed(2)}`;
+          btn.classList.add('active');
       }
     }
   }
@@ -1070,8 +1220,10 @@ allWaiters.forEach(w => {
       selectedItems.forEach((it, idx) => {
         const amount = (it.quantity * it.unit_price).toFixed(2);
         const tr = document.createElement('tr');
-        tr.setAttribute('data-item-id', it.id);
-        tr.setAttribute('data-index', idx);
+tr.setAttribute('data-source-type', it.type);
+tr.setAttribute('data-source-id',   it.id);
+tr.setAttribute('data-index',       idx);
+
         tr.innerHTML = `
           <td>${idx + 1}</td>
           <td>${it.name}</td>
@@ -1090,6 +1242,39 @@ allWaiters.forEach(w => {
       recalcTotals();
     }
 
+    // call to upsert a table item
+    function saveTableItem(tableId, type, id, price, qty=1) {
+      fetch(`/tables/${tableId}/items/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+        body: JSON.stringify({
+          source_type: type,
+          source_id: id,
+          unit_price: price,
+          quantity: qty
+        })
+      }).then(() => loadTableItems(tableId));
+    }
+    
+      function loadTableItems(tableId) {
+      if (!tableId) {
+    // no table → just render your in-memory items
+    renderOrderItemsTable();
+    return;
+  }
+      fetch(`/tables/${tableId}/items/`)
+        .then(r => r.json())
+        .then(data => {
+          selectedItems = data.items.map(it => ({
+            type: it.source_type,
+            id: it.source_id,
+            name: it.name,
+            quantity: it.quantity,
+            unit_price: it.unit_price
+          }));
+          renderOrderItemsTable();
+        });
+    }
     // Add an item (or increment quantity if it already exists)
     function addItemToOrder(type, id, name, unit_price) {
       const existingIdx = selectedItems.findIndex(
@@ -1141,6 +1326,7 @@ allWaiters.forEach(w => {
       renderMenuItems(catId, document.getElementById('search-term').value.trim());
     }
 
+    
     function renderMenuItems(catId = null, filterTerm = "") {
       const grid = document.getElementById('menu-items-grid');
       grid.innerHTML = '';
@@ -1207,6 +1393,10 @@ allWaiters.forEach(w => {
     // Wire Up Event Handlers on DOMContentLoaded
     // ======================
     document.addEventListener('DOMContentLoaded', () => {
+
+        homeDelivery.addEventListener('change', () => {
+  refreshWatermark(homeDelivery.checked ? "yes" : "no");
+  });
       // 1) If editing, pre‐populate selectedItems from existing JSON
       if (editingOrderId) {
         const existingFromServer = JSON.parse(
@@ -1244,8 +1434,24 @@ allWaiters.forEach(w => {
           }
         });
 
+          document.getElementById('menu-items-grid').addEventListener('click', e => {
+    const card = e.target.closest('.item-card, .deal-card');
+    if (!card) return;
+    const type = card.classList.contains('deal-card') ? 'deal' : 'menu';
+    const id   = parseInt(card.dataset[ type==='menu' ? 'itemId' : 'dealId' ], 10);
+    const price= parseFloat(card.dataset.price);
+    if (selectedTableId) {
+      // persist to server buffer
+      saveTableItem(selectedTableId, type, id, price, 1);
+    } else {
+      const name = card.querySelector('span').innerText;
+      // take-away or home-delivery mode: just in memory
+      addItemToOrder(type, id, name, price);
+    }
+  });
+
       // 4) MenuItem or Deal click → add to order
-      document.getElementById('menu-items-grid')
+      {% comment %} document.getElementById('menu-items-grid')
         .addEventListener('click', e => {
           const itemCard = e.target.closest('.item-card');
           if (itemCard) {
@@ -1262,12 +1468,54 @@ allWaiters.forEach(w => {
             const name = dealCard.querySelector('span').innerText;
             addItemToOrder('deal', id, name, price);
           }
-        });
+        }); {% endcomment %}
 
       // 5) Remove row or quantity change
       document.getElementById('order-items-body')
         .addEventListener('click', e => {
-          if (e.target.closest('.btn-remove-item')) {
+
+              const btn = e.target.closest('.btn-remove-item');
+    if (!btn) return;
+
+    const tr = btn.closest('tr');
+    const st = tr.dataset.sourceType;
+    const sid = tr.dataset.sourceId;
+
+    if (!selectedTableId) {
+      alert('Please select a table first');
+      return;
+    }
+
+    fetch(`/tables/${selectedTableId}/items/`, {
+      method: 'DELETE',
+      headers: {
+        'X-CSRFToken': csrftoken,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ source_type: st, source_id: sid })
+    })
+    .then(resp => {
+      if (!resp.ok) {
+        // pull down the error response so you can debug
+        return resp.json().then(json => {
+          console.error('DELETE /items/ error:', json);
+          throw new Error(json.error || 'Delete failed');
+        });
+      }
+      return resp.json();
+    })
+    .then(json => {
+      if (json.status === 'deleted') {
+        loadTableItems(selectedTableId);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert('Could not remove item.');
+    });
+
+              if (e.target.closest('.btn-remove-item')) {
             const idx = parseInt(
               e.target.closest('tr').dataset.index, 10
             );
@@ -1358,13 +1606,9 @@ allWaiters.forEach(w => {
           const action = editingOrderId ? 'update' : 'create';
           const payload = buildPayload(action);
 
-          {% if order %}
-            const url = editingOrderId
-              ? "{% url 'order_update' order.id %}"
-              : "{% url 'order_create' %}";
-          {% else %}
-            const url = "{% url 'order_create' %}";
-          {% endif %}
+        const url = editingOrderId
+          ? `/orders/${editingOrderId}/update/`
+          : `{% url 'order_create' %}`;
 
           fetch(url, {
     method: 'POST',
@@ -1401,18 +1645,13 @@ allWaiters.forEach(w => {
 
       // 11) Paid button: create (if needed) and mark “paid” & print receipts
       document.querySelector('.btn-paid').addEventListener('click', () => {
+        console.log("Button has been clicked.")
     const discount = parseFloat(document.getElementById('discount').value) || 0;
     const taxPerc  = parseFloat(document.getElementById('tax-perc').value) || 0;
     const service  = parseFloat(document.getElementById('service-charge').value) || 0;
 
+    const url = getOrderSaveUrl();
     const payload = buildPayload('paid');
-
-    // Decide URL based on whether we're creating vs updating
-    {% if order %}
-      const url = "{% url 'order_update' order.id %}";
-    {% else %}
-      const url = "{% url 'order_create' %}";
-    {% endif %}
 
     fetch(url, {
       method: 'POST',
@@ -1424,21 +1663,25 @@ allWaiters.forEach(w => {
     })
     .then(resp => resp.json())
     .then(data => {
+
       if (data.error) {
         // Show the error from server (e.g. “Print failed: …”)
         showAlert('error', data.error);
       } else {
+
+          // after successful create/update & print:
+          fetch(`/tables/${selectedTableId}/items/clear/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': csrftoken }
+          }).then(() => loadTableItems(selectedTableId));
 
           selectedItems = [];
           renderOrderItemsTable();
           document.getElementById('discount').value = 0;
           document.getElementById('tax-perc').value = 0;
           document.getElementById('service-charge').value = 0;
-          showAlert('success', 'Order reset');
-
 
         showAlert('success', 'Order saved & sent to printer!');
-
 
       }
     })
@@ -1451,73 +1694,71 @@ allWaiters.forEach(w => {
     // NEW handler:
   tableButtons.forEach(btn => {
     btn.addEventListener('click', () => {
-      const newTableId = btn.dataset.tableId || null;
+      
+      selectedTableId = btn.dataset.tableId || null;
+      refreshWatermark(selectedTableId);
+      loadTableItems(selectedTableId);
+      const sess = fetch(`/tables/${selectedTableId}/session/`).then(r=>r.json());
+      waiterSelect.value    = sess.waiter_id || '';
 
-      // 1) Define the “actually switch” logic
-      function doSwitch() {
-        fetch(`/orders/table-switch/?table_id=${newTableId}`)
-          .then(r => r.json())
-          .then(d => {
-            // update globals
-            editingOrderId  = d.order_id;
-            selectedTableId = d.table_id;
-
-            // update UI heading
-            document.getElementById('table-heading').innerText =
-              d.table_id
+      document.getElementById('table-heading').innerText =
+              selectedTableId
                 ? `Table ${btn.querySelector('span').innerText.split(' ')[1]}`
                 : 'Walk-in Customer';
-
-            // load saved items & charges
-            selectedItems = d.items.map(it => ({
-              type: it.type,
-              id:   it.type==='menu' ? it.menu_item_id : it.deal_id,
-              name: it.name,
-              quantity: it.quantity,
-              unit_price: it.unit_price
-            }));
-            document.getElementById('discount').value       = d.discount;
-            document.getElementById('tax-perc').value       = d.tax_percentage;
-            document.getElementById('service-charge').value = d.service_charge;
-
-            renderOrderItemsTable();
-
-            // highlight buttons
-            tableButtons.forEach(b => b.classList.remove('selected'));
-            btn.classList.add('selected');
-
-            // swap Create vs Update text/icon
-            const createBtn = document.querySelector('.btn-create');
-            if (editingOrderId) {
-              createBtn.innerHTML = '<i class="fa fa-save"></i> Update';
-            } else {
-              createBtn.innerHTML = '<i class="fa fa-cart-plus"></i> Create';
-            }
-          });
-      }
-
-      // 2) If we already have an order open, save it first
-      if (editingOrderId) {
-        const draftPayload = buildPayload('update');
-        fetch(`/orders/${editingOrderId}/update/`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrftoken
-          },
-          body: JSON.stringify(draftPayload)
-        })
-        // regardless of success or failure, switch afterward
-        .catch(err => console.warn('Draft save failed:', err))
-        .finally(doSwitch);
-
-      } else {
-        // brand-new walk-in → just switch
-        doSwitch();
-      }
     });
+
   });
 
+  // 2) When changing waiter or homeDelivery in UI, POST to session
+waiterSelect.addEventListener('change', ()=> {
+  fetch(`/tables/${selectedTableId}/session/`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrftoken},
+    body: JSON.stringify({ waiter_id: waiterSelect.value, home_delivery: homeDelivery.checked })
+  });
+});
+
+const printTokenBtn = document.getElementById('print-token-btn');
+
+printTokenBtn.addEventListener('click', () => {
+  if (!selectedTableId) {
+    alert('Please select a table first');
+    return;
+  }
+  fetch(`/tables/${selectedTableId}/print-token/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': csrftoken }
+  })
+  .then(r => r.json())
+  .then(json => {
+    if (json.status === 'printed') {
+      alert(`Successfully printed ${json.count} new item tokens.`);
+    } else if (json.status === 'nothing_to_print') {
+      alert('No new items to print.');
+    }
+    // reload buffer so printed_quantity updates
+    loadTableItems(selectedTableId);
+  })
+  .catch(err => {
+    console.error(err);
+    alert('Error printing token. Check console.');
+  });
+});
+
+  function refreshWatermark(text) {
+  let label;
+  if (text == "yes") {
+    label = 'Home Delivery';
+  }
+  else if(text == "no"){
+    label = ""
+  } else if (text == "takeaway") {
+    label = 'Take Away';
+  } else {
+    label = `Table ${text}`;
+  }
+  watermark.textContent = label;
+}
   // ─ Include table_id in every save/paid payload ─
   function buildPayload(action) {
     const source = foodPandaCheckbox.checked ? "food_panda" : "walk_in";
@@ -1543,8 +1784,64 @@ allWaiters.forEach(w => {
     base.isHomeDelivery = isHomeDelivery;
     return base;
   }
+    // NOW compute the URL for ANY save operation (create/update):
+function getOrderSaveUrl() {
+  // else truly brand-new
+  return `{% url 'order_create' %}`;
+}
+
+document.getElementById('order-items-body')
+  .addEventListener('change', function(e) {
+    if (!e.target.matches('.item-qty-input')) return;
+
+    const input = e.target;
+    const newQty = parseInt(input.value, 10) || 1;
+    const tr = input.closest('tr');
+
+    // grab the TableMenuItem identifiers
+    const st  = tr.getAttribute('data-source-type');
+    const sid = tr.getAttribute('data-source-id');
+
+    if (selectedTableId) {
+      // ==== TABLE SESSION branch ====
+      fetch(`/tables/${selectedTableId}/items/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken
+        },
+        body: JSON.stringify({
+          source_type: st,
+          source_id:   sid,
+          quantity:    newQty
+        })
+      })
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === 'updated') {
+          // reload from server so printed_quantity etc stays in sync
+          loadTableItems(selectedTableId);
+        } else {
+          alert(`Error updating quantity: ${json.error||'unknown'}`);
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        alert('Network error while updating quantity.');
+      });
+    } else {
+      // ==== ORDER‐EDIT branch (your existing logic) ====
+      const idx = parseInt(tr.dataset.index, 10);
+      selectedItems[idx].quantity = newQty;
+      tr.querySelector('.item-amount').innerText =
+        formatPrice(newQty * selectedItems[idx].unit_price);
+      recalcTotals();
+    }
+  });
 
     });
+
+
 </script>
 
 
