@@ -23,6 +23,14 @@ from .models import (
     MenuItem, Deal
 )
 
+from django.db.models import Max
+from django.utils import timezone
+
+def get_next_token_number():
+    last_order   = Order.objects.aggregate(m=Max('token_number'))['m'] or 0
+    last_session = TableSession.objects.aggregate(m=Max('token_number'))['m'] or 0
+    return max(last_order, last_session) + 1
+
 class LoginView(View):
     def get(self, request):
         return render(request, 'login.html')
@@ -101,7 +109,7 @@ class CategoryListView(LoginRequiredMixin, ListView):
 
 class CategoryCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = Category
-    fields = ['name', 'description']
+    fields = ['name', 'description', 'rank',  'show_in_orders']
     template_name = 'categories/category_form.html'
     success_url = reverse_lazy('category_list')
 
@@ -112,7 +120,7 @@ class CategoryDetailView(LoginRequiredMixin, DetailView):
 
 class CategoryUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = Category
-    fields = ['name', 'description']
+    fields = ['name', 'description', 'rank',  'show_in_orders']
     template_name = 'categories/category_form.html'
     success_url = reverse_lazy('category_list')
 
@@ -140,7 +148,7 @@ class MenuItemListView(LoginRequiredMixin, ListView):
 
 class MenuItemCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'is_available', 'image']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -151,7 +159,7 @@ class MenuItemDetailView(LoginRequiredMixin, DetailView):
 
 class MenuItemUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'is_available', 'image']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -196,7 +204,7 @@ class DealListView(LoginRequiredMixin, ListView):
 
 class DealCreateView(LoginRequiredMixin, CreateView):
     model = Deal
-    fields = ['name', 'description', 'price', 'food_panda_price', 'is_available', 'image']
+    fields = ['name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image']
     template_name = 'deals/deal_form.html'
     success_url = reverse_lazy('deal_list')
 
@@ -224,7 +232,7 @@ class DealCreateView(LoginRequiredMixin, CreateView):
 
 class DealUpdateView(LoginRequiredMixin, UpdateView):
     model = Deal
-    fields = ['name', 'description', 'price', 'food_panda_price', 'is_available', 'image']
+    fields = ['name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image']
     template_name = 'deals/deal_form.html'
     success_url = reverse_lazy('deal_list')
 
@@ -274,12 +282,13 @@ from django.urls import reverse_lazy
 from django.views.generic import ListView
 from django.db.models import F, Sum, ExpressionWrapper, DecimalField
 from .models import Order
+from django.utils.dateparse import parse_datetime
 
 class OrderListView(LoginRequiredMixin, ListView):
     model = Order
     template_name = 'orders/order_list.html'
     context_object_name = 'orders'
-    paginate_by = 15
+    paginate_by = 20
 
     def get_queryset(self):
         # Step 1: Base queryset with select_related
@@ -295,10 +304,17 @@ class OrderListView(LoginRequiredMixin, ListView):
             qs = qs.filter(number__icontains=q)
         if status:
             qs = qs.filter(status=status)
+        # Parse the datetime‐local strings into real datetimes
         if date_from:
-            qs = qs.filter(created_at__date__gte=date_from)
+            dt_from = parse_datetime(date_from)
+            if dt_from:
+                dt_from = timezone.make_aware(dt_from)
+                qs = qs.filter(created_at__gte=dt_from)
         if date_to:
-            qs = qs.filter(created_at__date__lte=date_to)
+            dt_to = parse_datetime(date_to)
+            if dt_to:
+                dt_to = timezone.make_aware(dt_to)
+                qs = qs.filter(created_at__lte=dt_to)
 
         # Step 3a: Define an expression for line_total = quantity * unit_price
         #        We'll sum this expression across all related OrderItem rows.
@@ -325,6 +341,40 @@ class OrderListView(LoginRequiredMixin, ListView):
         )
 
         return qs
+    
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        orders_on_page = ctx['orders']  # current page
+
+        # Serial numbering across pages
+        # page_obj.start_index gives 1-based index of first item
+        ctx['start_index'] = ctx['page_obj'].start_index()
+
+        # Compute per-page total
+        from decimal import Decimal
+        page_total = sum(
+            (o.total_amount or Decimal('0'))
+            for o in orders_on_page
+        )
+        ctx['page_total'] = page_total
+
+        # Compute summary stats for this filtered set
+        all_filtered = self.get_queryset()
+        ctx['summary_total_orders'] = all_filtered.count()
+        ctx['summary_total_amount'] = all_filtered.aggregate(
+            total=Sum(F('items__quantity')*F('items__unit_price'))
+        )['total'] or Decimal('0')
+        # Assuming Payment model records actual received amounts
+        ctx['summary_received'] = Payment.objects.filter(
+            order__in=all_filtered
+        ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
+        ctx['summary_remaining'] = ctx['summary_total_amount'] - ctx['summary_received']
+
+        # Preserve date filters in context for form
+        ctx['date_from'] = self.request.GET.get('date_from', '')
+        ctx['date_to'] = self.request.GET.get('date_to', '')
+
+        return ctx
 # core/views.py
 
 import json
@@ -354,12 +404,21 @@ from django.utils import timezone
 class OrderCreateView(LoginRequiredMixin, View):
 
     def get(self, request):
-        categories = Category.objects.prefetch_related('items').order_by('name')
+        categories = (
+            Category.objects
+                .filter(show_in_orders=True)
+                .order_by('rank')
+                .prefetch_related('items')
+        )
         all_waiters = Waiter.objects.order_by('name').values('id','name')
         waiters_json = json.dumps(list(all_waiters))
 
         # Serialize menu items
-        all_menu_items = MenuItem.objects.filter(is_available=True).select_related('category')
+        # all_menu_items = MenuItem.objects.filter(is_available=True).select_related('category')
+        all_menu_items = MenuItem.objects.filter(is_available=True)\
+        .select_related('category')\
+        .order_by('rank')
+
         menu_items_list = [
             {
                 "id": mi.id,
@@ -395,11 +454,25 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         # Annotate tables with pending totals and has_items flag
         tables = list(Table.objects.all().order_by("number"))
+        # prefetch all sessions + their picked_items in one go
+        sessions = TableSession.objects\
+            .prefetch_related('picked_items')\
+            .all()\
+            .in_bulk(field_name='table_id')
+        
         for t in tables:
-            pending = Order.objects.filter(table=t, status="pending").first()
-            total = sum(oi.quantity * oi.unit_price for oi in (pending.items.all() if pending else []))
-            t.current_order_total = f"{total:.2f}"
-            t.has_items = (total > 0)
+            sess = sessions.get(t.id)
+            if sess:
+                # sum(qty × unit_price) across all picked_items
+                total = sum(
+                    pi.quantity * pi.unit_price
+                    for pi in sess.picked_items.all()
+                )
+                t.current_order_total = f"{total:.2f}"
+                t.has_items = total > 0
+            else:
+                t.current_order_total = "0.00"
+                t.has_items = False
 
         return render(request, "orders/order_form.html", {
             "categories": categories,
@@ -456,6 +529,21 @@ class OrderCreateView(LoginRequiredMixin, View):
             isHomeDelivery = is_home_delivery,
             created_at=my_datetime,
         )
+        
+        # — if this was for a table, steal its session’s token_number — 
+        if table_id:
+            session = TableSession.objects.get(table_id=table_id)
+            order.token_number = session.token_number
+            order.save(update_fields=['token_number'])
+
+            session = TableSession.objects.get(table_id=order.table_id)
+            session.token_number = None
+            session.save(update_fields=['token_number'])
+        else:
+            order.token_number = get_next_token_number()
+            order.save(update_fields=['token_number'])
+
+
         print(f'Status Value: {status_value}')
         print(f"Date time now {timezone.localtime(timezone.now())}")
         if table_id and status_value != "paid":
@@ -463,7 +551,9 @@ class OrderCreateView(LoginRequiredMixin, View):
             tbl.is_occupied = True
             tbl.save()
             print(f"1. Table {table_id}: occupied {tbl.is_occupied} for Order # {order.pk}")
-
+        
+        total_price = 0
+        
         for it in items:
             unit_price = it["unit_price"]
             # Check if the source is "Food Panda"
@@ -471,17 +561,21 @@ class OrderCreateView(LoginRequiredMixin, View):
                 if it.get("type") == "menu":
                     menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
                     unit_price = menu_item.food_panda_price if menu_item.food_panda_price else menu_item.price
+                    total_price += unit_price
                 elif it.get("type") == "deal":
                     deal = Deal.objects.get(pk=it["deal_id"])
                     unit_price = deal.food_panda_price if deal.food_panda_price else deal.price
+                    total_price += unit_price
             else:
                 # Use default price if not a Food Panda order
                 if it.get("type") == "menu":
                     menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
                     unit_price = menu_item.price
+                    total_price += unit_price
                 elif it.get("type") == "deal":
                     deal = Deal.objects.get(pk=it["deal_id"])
                     unit_price = deal.price
+                    total_price += unit_price
 
             if it.get("type") == "menu":
                 OrderItem.objects.create(
@@ -497,7 +591,16 @@ class OrderCreateView(LoginRequiredMixin, View):
                     quantity=it["quantity"],
                     unit_price=unit_price
             )
-     
+        
+        if not table_id:
+            payment = Payment.objects.create(
+                    order=order,
+                    amount=total_price,
+                    method="cash",
+                    details = ""
+            )
+
+
         if status_value == "paid" or status_value == "pending":
                 try:
                     ps = PrintStatus.objects.first()
@@ -506,8 +609,26 @@ class OrderCreateView(LoginRequiredMixin, View):
 
                     if token_enabled:
                         if not table_id:
-                            token_data = build_token_bytes(order, is_food_panda)
-                            send_to_printer(token_data)
+                            # token_data = build_token_bytes(order, is_food_panda)
+                            # send_to_printer(token_data)
+
+                            # gather only fresh (not-yet-printed) items
+                            new_items = list(order.items.filter(token_printed=False))
+                            # split out pizza/chai
+                            pizza_chai = [
+                                oi for oi in new_items
+                                if "pizza" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
+                                or "chai"  in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
+                            ]
+                            others = [oi for oi in new_items if oi not in pizza_chai]
+
+                            if pizza_chai:
+                                token_data = build_token_bytes_for_items(order, pizza_chai, "PIZZA & CHAI TOKEN")
+                                send_to_printer(token_data)
+                            if others:
+                                token_data = build_token_bytes_for_items(order, others, "KITCHEN TOKEN")
+                                send_to_printer(token_data)
+
                     if bill_enabled:
                         bill_data = build_bill_bytes(order, is_food_panda, "Customer Copy")
                         send_to_printer(bill_data)
@@ -723,10 +844,47 @@ class OrderUpdateView(LoginRequiredMixin, View):
 
 
 
+# core/views.py
+# core/views.py
+
+from decimal import Decimal
+from django.views.generic import DetailView
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+from .models import Order
+
 class OrderDetailView(LoginRequiredMixin, DetailView):
     model = Order
     template_name = 'orders/order_detail.html'
     context_object_name = 'order'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        order = self.object
+
+        # 1) Compute subtotal as a Decimal
+        subtotal = sum(
+            oi.quantity * oi.unit_price
+            for oi in order.items.all()
+        ) or Decimal('0')
+
+        # 2) Pull discounts, tax%, service as Decimals
+        discount       = order.discount       or Decimal('0')
+        tax_percentage = order.tax_percentage or Decimal('0')
+        service_charge = order.service_charge or Decimal('0')
+
+        # 3) Compute tax on (subtotal – discount)
+        tax_amount = (subtotal - discount) * tax_percentage / Decimal('100')
+
+        # 4) Grand total
+        grand_total = subtotal - discount + tax_amount + service_charge
+
+        ctx.update({
+            'subtotal':   subtotal,
+            'tax_amount': tax_amount,
+            'grand_total': grand_total,
+        })
+        return ctx
 
 
 
@@ -785,19 +943,21 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
 
     # ─── Order Items List (left name, right qty) ─────────────────────────
     new_items = order.items.filter(token_printed=False)
+    i = 1
     for oi in new_items:
         name = (oi.menu_item.name if oi.menu_item else oi.deal.name)[:20]
         name_field = name.ljust(20).encode("ascii", "ignore")
+        serial_number = str(i).encode("ascii", "ignore")
         qty_bytes = str(oi.quantity).rjust(3).encode("ascii")
-        lines.append(name_field + b"  x" + qty_bytes + b"\n")
+        lines.append(serial_number + b". " + name_field + b"  x" + qty_bytes + b"\n")
+        i += 1
 
-    lines.append(b"\n\n")
+    lines.append(b"\n\n\n\n")
     # ─── Feed + Cut ────────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")    # full cut
 
     return b"".join(lines)
-
 
 
 def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
@@ -851,6 +1011,7 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
 
     # ─── Each OrderItem row ───────────────────────────────────────────────
     subtotal = 0.0
+    
     for oi in order.items.all():
         name = (oi.menu_item.name if oi.menu_item else oi.deal.name)[:16]
         name_field = name.ljust(16).encode("ascii", "ignore")
@@ -900,9 +1061,7 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
 
     # Developer / tagline / contact
     lines.append(b"Developed by Qonkar Technologies\n")
-    lines.append(b"Contact: +92 305 8214945\n")
-    lines.append(b"www.qonkar.com\n\n")
-    lines.append(b"Thank you for your support!\n")
+    lines.append(b"www.qonkar.com | +92 305 8214945\n")
     lines.append(b"\n" * 4)
 
     # ─── Cut paper (full) ─────────────────────────────────────────────────
@@ -1200,7 +1359,7 @@ def build_token_bytes_for_deltas(order, items_with_delta):
         qty_bytes  = str(delta).rjust(3).encode("ascii")
         lines.append(name_field + b"  x" + qty_bytes + b"\n")
 
-    lines.append(b"\n\n\n\n")
+    lines.append(b"\n\n\n")
     # ─── feed + cut ─────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")    # full cut
@@ -1981,6 +2140,7 @@ def close_order(request):
             order_id = data['order_id']
             payment_method = data['payment_method']
             amount = data['amount']
+            details = data['details']
 
             # Get the order
             order = Order.objects.get(id=order_id, status='pending')
@@ -1989,7 +2149,8 @@ def close_order(request):
             payment = Payment.objects.create(
                 order=order,
                 amount=amount,
-                method=payment_method
+                method=payment_method,
+                details = details
             )
 
             # Update order status to 'paid'
@@ -2017,10 +2178,15 @@ class TableSessionView(View):
     """GET session data; POST to set waiter & home_delivery"""
     def get(self, request, table_id):
         table = get_object_or_404(Table, pk=table_id)
-        session, _ = TableSession.objects.get_or_create(table=table)
+        session, created = TableSession.objects.get_or_create(table=table)
+        # if brand new (or no token yet), allocate one now
+        if created or session.token_number is None:
+            session.token_number = get_next_token_number()
+            session.save(update_fields=['token_number'])
         data = {
             'waiter_id': session.waiter_id,
             'home_delivery': session.home_delivery,
+            'token_number': session.token_number,
         }
         return JsonResponse(data)
 
@@ -2097,19 +2263,19 @@ class TableItemsView(View):
         remaining = list(session.picked_items.all())
 
         # 3) debug‐print to console
-        print(f"[Table {table_id}] after delete, remaining items:")
-        for ti in remaining:
-            Model = MenuItem if ti.source_type=='menu' else Deal
-            obj   = Model.objects.get(pk=ti.source_id)
-            print(f"    • {ti.quantity}× {obj.name} @ {ti.unit_price}")
+        # print(f"[Table {table_id}] after delete, remaining items:")
+        # for ti in remaining:
+        #     Model = MenuItem if ti.source_type=='menu' else Deal
+        #     obj   = Model.objects.get(pk=ti.source_id)
+        #     print(f"    • {ti.quantity}× {obj.name} @ {ti.unit_price}")
 
         # 4) build & send full‐token payload
-        payload = build_full_session_token_bytes(session, remaining)
-        send_to_printer(payload)
+        # payload = build_full_session_token_bytes(session, remaining)
+        # send_to_printer(payload)
 
         # 5) mark all as printed
         for ti in remaining:
-            ti.printed_quantity = ti.quantity
+            ti.printed_quantity = 0
             ti.save(update_fields=['printed_quantity'])
 
         # 6) respond
@@ -2151,51 +2317,60 @@ class TableItemsView(View):
 
 def build_full_session_token_bytes(session, items):
     from django.utils import timezone
-    from .models import Order, MenuItem, Deal
+    from .models import MenuItem, Deal
 
-    esc = b"\x1B"; gs = b"\x1D"
+    esc = b"\x1B"
+    gs  = b"\x1D"
     lines = []
 
     # — Header —
-    lines.append(esc+b"\x61"+b"\x01"); lines.append(b"Cafe Kunj\n")
-    lines.append(esc+b"\x21"+b"\x00"); lines.append(b"UPDATED KITCHEN TOKEN\n\n")
+    lines.append(esc + b"\x61" + b"\x01")        # center
+    lines.append(esc + b"\x21" + b"\x20")        # double-width
+    lines.append(b"UPDATED KITCHEN TOKEN\n")
+    lines.append(esc + b"\x21" + b"\x00")        # normal
+    lines.append(b"\n")
 
-    # — Token # / Table # —
-    order = Order.objects.filter(table=session.table, status="pending").first()
-    token_str = str(order.token_number if order else 0).encode()
-    lines.append(esc+b"\x21"+b"\x30"); lines.append(b"TOKEN #: "+token_str+b"\n\n")
-    lines.append(esc+b"\x21"+b"\x00")
-    table_no = str(session.table.number).encode()
-    lines.append(esc+b"\x61"+b"\x01"); lines.append(esc+b"\x21"+b"\x30")
-    lines.append(b"TABLE #: "+table_no+b"\n\n")
-    lines.append(esc+b"\x21"+b"\x00")
+    token_str = str(session.token_number).encode("ascii")
+    lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x10 → double width, normal height
+    lines.append(b"TOKEN #: " + token_str + b"\n\n")
+    lines.append(esc + b"\x21" + b"\x00")     # back to normal
+    lines.append(esc + b"\x61" + b"\x00")     # left
+
+    # — Table # (large) —
+    table_no = str(session.table.number).encode("ascii")
+    lines.append(esc + b"\x61" + b"\x01")        # center
+    lines.append(esc + b"\x21" + b"\x30")        # double-height
+    lines.append(b"TABLE #: " + table_no + b"\n\n")
+    lines.append(esc + b"\x21" + b"\x00")        # normal
 
     # — Date / Waiter —
-    now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode()
-    lines.append(b"Date   : "+now+b"\n")
+    now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    lines.append(esc + b"\x61" + b"\x00")        # left
+    lines.append(b"Date   : " + now + b"\n")
     if session.waiter:
-        lines.append(b"Waiter : "+session.waiter.name.encode("ascii", "ignore")+b"\n")
-    lines.append(b"-"*32+b"\n")
+        waiter = session.waiter.name.encode("ascii", "ignore")
+        lines.append(b"Waiter : " + waiter + b"\n")
+    lines.append(b"-" * 32 + b"\n")
 
     # — Columns —
     lines.append(b"#  Item                 Qty\n")
-    lines.append(b"-"*32+b"\n")
+    lines.append(b"-" * 32 + b"\n")
 
     # — Items —
     for idx, ti in enumerate(items, start=1):
-        Model = MenuItem if ti.source_type=="menu" else Deal
-        name = Model.objects.get(pk=ti.source_id).name[:18]
-        idx_f  = str(idx).rjust(2).encode()
-        name_f = name.ljust(18).encode("ascii","ignore")
-        qty_f  = str(ti.quantity).rjust(3).encode()
+        Model   = MenuItem if ti.source_type == "menu" else Deal
+        name    = Model.objects.get(pk=ti.source_id).name[:18]
+        idx_f   = str(idx).rjust(2).encode()                     # " 1", " 2", ...
+        name_f  = name.ljust(18).encode("ascii", "ignore")       # pad to 18 chars
+        qty_f   = str(ti.quantity).rjust(3).encode()             # "  3", etc.
         lines.append(idx_f + b"  " + name_f + b"  " + qty_f + b"\n")
 
+    lines.append(b"\n\n\n")
     # — Cut —
-    lines.append(b"\n"*4)
-    lines.append(gs + b"\x56" + b"\x00")
+    lines.append(b"\n" * 4)
+    lines.append(gs + b"\x56" + b"\x00")  # full cut
 
     return b"".join(lines)
-
 
 class ClearTableItemsView(View):
     """DELETE all items (e.g. after paid)"""
@@ -2203,7 +2378,6 @@ class ClearTableItemsView(View):
         session = get_object_or_404(TableSession, table_id=table_id)
         session.picked_items.all().delete()
         return JsonResponse({'status': 'cleared'})
-
 
 
 
@@ -2220,6 +2394,10 @@ class TablePrintTokenView(View):
         # 1) Load the session
         session = get_object_or_404(TableSession, table_id=table_id)
 
+        if session.token_number is None:
+            session.token_number = get_next_token_number()
+            session.save(update_fields=['token_number'])
+
         # 2) Gather all picked_items & compute deltas
         items = session.picked_items.all()
         deltas = [
@@ -2230,35 +2408,63 @@ class TablePrintTokenView(View):
 
         # 3) Nothing to print?
         if not items_with_delta:
-            print("[TOKEN DEBUG] nothing to print")
+            # print("[TOKEN DEBUG] nothing to print")
             return JsonResponse({'status': 'nothing_to_print'})
+        
+        # 3) Split into pizza/chai vs others
+        pizza_chai, others = [], []
+        for ti, d in items_with_delta:
+            Model = MenuItem if ti.source_type=='menu' else Deal
+            name  = Model.objects.get(pk=ti.source_id).name.lower()
+            if 'pizza' in name or 'chai' in name:
+                pizza_chai.append((ti, d))
+            else:
+                others.append((ti, d))
+
+        # 4) Print each group with a custom header
+        if pizza_chai:
+            payload = build_group_token_bytes(
+                session,
+                pizza_chai,
+                header_label="PIZZA & CHAI TOKEN"
+            )
+            send_to_printer(payload)
+
+        if others:
+            payload = build_group_token_bytes(
+                session,
+                others,
+                header_label="KITCHEN TOKEN"
+            )
+            send_to_printer(payload)
+        
 
         # 4) Debug: log each delta
-        print("[TOKEN DEBUG] will print deltas:")
+        # print("[TOKEN DEBUG] will print deltas:")
         for ti, delta in items_with_delta:
             Model  = MenuItem if ti.source_type == "menu" else Deal
             name   = Model.objects.get(pk=ti.source_id).name
             action = "Added" if delta > 0 else "Removed"
-            print(f"  • {action} {abs(delta)} × {name} ({ti.source_type})")
+            # print(f"  • {action} {abs(delta)} × {name} ({ti.source_type})")
 
         # 5) Build payload
-        payload = build_session_token_bytes(session, items_with_delta)
+        # payload = build_session_token_bytes(session, items_with_delta)
 
         # 6) Debug: dump the full payload line-by-line
-        print("[TOKEN DEBUG] full payload:")
-        for line in payload.split(b"\n"):
-            try:
-                print("    " + line.decode("ascii"))
-            except UnicodeDecodeError:
-                print("    " + repr(line))
+        # print("[TOKEN DEBUG] full payload:")
+        # for line in payload.split(b"\n"):
+        #     try:
+        #         print("    " + line.decode("ascii"))
+        #     except UnicodeDecodeError:
+        #         print("    " + repr(line))
 
         # 7) Send to printer & mark printed
-        send_to_printer(payload)
+        # send_to_printer(payload)
         for ti, _ in items_with_delta:
             ti.printed_quantity = ti.quantity
             ti.save(update_fields=['printed_quantity'])
 
-        print(f"[TOKEN DEBUG] sent {len(items_with_delta)} lines to printer")
+        # print(f"[TOKEN DEBUG] sent {len(items_with_delta)} lines to printer")
         return JsonResponse({
             'status': 'printed',
             'count': len(items_with_delta)
@@ -2278,10 +2484,14 @@ def build_session_token_bytes(session, items_with_delta):
         b"UPDATED KITCHEN TOKEN\n" if has_removal
         else b"KITCHEN TOKEN\n"
     )
-    lines.append(esc + b"\x21" + b"\x00")     # back to normal
     lines.append(b"\n")
+    token_str = str(session.token_number).encode("ascii")
+    lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x10 → double width, normal height
+    lines.append(b"TOKEN #: " + token_str + b"\n\n")
 
+    lines.append(esc + b"\x21" + b"\x00")     # back to normal
     # ─── Table Number (large) ─────────────────────────────────────────────
+    lines.append(esc + b"\x61" + b"\x00")     # left
     table_no = str(session.table.number).encode("ascii")
     lines.append(esc + b"\x61" + b"\x01")     # center
     lines.append(esc + b"\x21" + b"\x30")     # double height & width
@@ -2297,8 +2507,6 @@ def build_session_token_bytes(session, items_with_delta):
     if session.waiter:
         waiter = session.waiter.name.encode("ascii", "ignore")
         lines.append(b"Waiter: " + waiter + b"\n")
-    mode = b"HOME DELIVERY" if session.home_delivery else b"TAKE AWAY"
-    lines.append(b"Mode  : " + mode + b"\n")
     lines.append(b"-" * 32 + b"\n")
 
     # ─── Column Headers ───────────────────────────────────────────────────
@@ -2446,3 +2654,184 @@ def build_session_token_bytes(session, items_with_delta):
 #     lines.append(gs + b"\x56" + b"\x00")
 
 #     return b"".join(lines)
+
+
+from django.views import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.shortcuts import get_object_or_404
+from django.http import JsonResponse
+from .models import Order, PrintStatus
+from .printing import send_to_printer
+
+class OrderReprintView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        order = get_object_or_404(Order, pk=pk)
+
+        bill_data = build_bill_bytes(order, order.source or 'walk_in', 'Reprint Copy')
+        send_to_printer(bill_data)
+
+        return JsonResponse({'status': 'reprinted'})
+
+
+ESC = b"\x1B"
+GS  = b"\x1D"
+
+def build_token_bytes_for_items(order, items, header_label):
+    """Builds an ESC/POS kitchen token for a given list of OrderItem."""
+    lines = []
+    # 1) Header
+    lines.append(ESC + b"\x61" + b"\x01")   # center alignment
+    # lines.append(esc + b"\x21" + b"\x30")   # double height & width
+    lines.append(b"Cafe Kunj\n")
+    lines.append(ESC + b"\x21" + b"\x00")   # back to normal
+    lines.append(b"\n")
+
+    lines.append(ESC + b"\x61" + b"\x01")              # center
+    lines.append(header_label.encode("ascii") + b"\n\n")
+    # 2) Token #
+    token_str = str(order.token_number).encode("ascii")
+    lines.append(ESC + b"\x21" + b"\x30")              # double width
+    lines.append(b"TOKEN #: " + token_str + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00")              # back to normal
+    # 3) Date/Time
+    dt = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x00")              # left
+    lines.append(b"Date: " + dt + b"\n")
+    if order.waiter:
+        lines.append(f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore"))
+    # 4) Delivery / Take-Away
+    if order.isHomeDelivery == "yes":
+        lines.append(b"HOME DELIVERY\n\n")
+    elif order.isHomeDelivery == "no":
+        lines.append(b"TAKE AWAY\n\n")
+    lines.append(b"-" * 32 + b"\n")
+    # 5) Items
+    for idx, oi in enumerate(items, 1):
+        name = (oi.menu_item.name if oi.menu_item else oi.deal.name)[:20]
+        name_field = name.ljust(20).encode("ascii", "ignore")
+        qty = str(oi.quantity).rjust(3).encode("ascii")
+        lines.append(f"{idx}. ".encode("ascii") + name_field + b" x" + qty + b"\n")
+    # 6) Cut
+    lines.append(b"\n\n\n\n" + GS + b"\x56" + b"\x00")
+    return b"".join(lines)
+
+
+from django.shortcuts import get_object_or_404
+from django.http      import JsonResponse
+from django.views     import View
+from django.utils     import timezone
+
+from .models          import TableSession, MenuItem, Deal
+from .printing        import send_to_printer
+from .utils           import get_next_token_number
+
+ESC = b"\x1B"
+GS  = b"\x1D"
+
+class TablePrintTokenView(View):
+    def post(self, request, table_id):
+        # 1) Load or create the session token
+        session = get_object_or_404(TableSession, table_id=table_id)
+        if session.token_number is None:
+            session.token_number = get_next_token_number()
+            session.save(update_fields=['token_number'])
+
+        # 2) Compute deltas
+        items = session.picked_items.all()
+        deltas = [(ti, ti.quantity - (ti.printed_quantity or 0)) for ti in items]
+        items_with_delta = [(ti, d) for ti, d in deltas if d != 0]
+        if not items_with_delta:
+            return JsonResponse({'status': 'nothing_to_print'})
+
+        # 3) Split into pizza/chai vs others
+        pizza_chai_pairs = []
+        other_pairs      = []
+        for ti, d in items_with_delta:
+            Model = MenuItem if ti.source_type == 'menu' else Deal
+            name  = Model.objects.get(pk=ti.source_id).name.lower()
+            if 'pizza' in name or 'chai' in name:
+                pizza_chai_pairs.append((ti, d))
+            else:
+                other_pairs.append((ti, d))
+
+        # 4) Print Pizza & Chai token
+        if pizza_chai_pairs:
+            payload = build_group_token_bytes(
+                session,
+                pizza_chai_pairs,
+                header_label="PIZZA & CHAI TOKEN"
+            )
+            send_to_printer(payload)
+
+        # 5) Print normal Kitchen token
+        if other_pairs:
+            payload = build_group_token_bytes(
+                session,
+                other_pairs,
+                header_label="KITCHEN TOKEN"
+            )
+            send_to_printer(payload)
+
+        # 6) Mark printed_quantity
+        for ti, _ in items_with_delta:
+            ti.printed_quantity = ti.quantity
+            ti.save(update_fields=['printed_quantity'])
+
+        return JsonResponse({
+            'status': 'printed',
+            'count': len(items_with_delta)
+        })
+
+
+def build_group_token_bytes(session, items_with_delta, header_label):
+    lines = []
+
+    # ── Header ─────────────────────────────────────────────
+    lines.append(ESC + b"\x61" + b"\x01")            # center
+    lines.append(ESC + b"\x21" + b"\x20")            # double-width
+    lines.append(header_label.encode("ascii") + b"\n")
+    lines.append(ESC + b"\x21" + b"\x00")            # normal
+    lines.append(b"\n")
+
+    # ── Token # ────────────────────────────────────────────
+    token_str = str(session.token_number).encode("ascii")
+    lines.append(ESC + b"\x21" + b"\x30")            # double width
+    lines.append(b"TOKEN #: " + token_str + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00")            # normal
+
+    # ── Table # ────────────────────────────────────────────
+    table_no = str(session.table.number).encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x01")
+    lines.append(ESC + b"\x21" + b"\x30")
+    lines.append(b"TABLE #: " + table_no + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00")
+
+    # ── Date / Waiter ───────────────────────────────────────
+    now = timezone.localtime(timezone.now())\
+                   .strftime("%Y-%m-%d %I:%M:%S %p")\
+                   .encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x00")
+    lines.append(b"Date  : " + now + b"\n")
+    if session.waiter:
+        waiter = session.waiter.name.encode("ascii", "ignore")
+        lines.append(b"Waiter: " + waiter + b"\n")
+    lines.append(b"-" * 32 + b"\n")
+
+    # ── Columns ─────────────────────────────────────────────
+    lines.append(b"#  Item                 Qty\n")
+    lines.append(b"-" * 32 + b"\n")
+
+    # ── Items Section ───────────────────────────────────────
+    for idx, (ti, delta) in enumerate(items_with_delta, start=1):
+        Model = MenuItem if ti.source_type=='menu' else Deal
+        name  = Model.objects.get(pk=ti.source_id).name[:18]
+        idx_b = str(idx).rjust(2).encode()
+        name_b= name.ljust(18).encode("ascii","ignore")
+        qty_b = str(delta).rjust(3).encode()
+        lines.append(idx_b + b"  " + name_b + b"  " + qty_b + b"\n")
+
+    # ── Cut ───────────────────────────────────────────────────
+    lines.append(b"\n" * 4)
+    lines.append(GS + b"\x56" + b"\x00")              # full cut
+
+    return b"".join(lines)

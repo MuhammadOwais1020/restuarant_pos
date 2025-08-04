@@ -102,6 +102,288 @@
 .modal-backdrop {
     background: rgba(0, 0, 0, 0.5); /* Dark background for overlay */
 }
+
+/* Base “.btn” */
+.btn {
+  display: inline-block;
+  font-weight: 400;
+  color: #212529;
+  text-align: center;
+  vertical-align: middle;
+  user-select: none;
+  background-color: transparent;
+  border: 1px solid transparent;
+  padding: .375rem .75rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  border-radius: .25rem;
+  transition: color .15s ease-in-out,
+              background-color .15s ease-in-out,
+              border-color .15s ease-in-out,
+              box-shadow .15s ease-in-out;
+  cursor: pointer;
+}
+
+/* Size modifiers */
+.btn-sm {
+  padding: .25rem .5rem;
+  font-size: .875rem;
+  border-radius: .2rem;
+}
+.btn-lg {
+  padding: .5rem 1rem;
+  font-size: 1.25rem;
+  border-radius: .3rem;
+}
+
+/* Disabled state */
+.btn:disabled,
+.btn.disabled {
+  opacity: .65;
+  pointer-events: none;
+}
+
+/* Focus ring */
+.btn:focus {
+  outline: 0;
+  box-shadow: 0 0 0 .25rem rgba(13,110,253,.25);
+}
+
+/* Active state */
+.btn:active,
+.btn.active {
+  background-image: none;
+  box-shadow: inset 0 3px 5px rgba(0,0,0,.125);
+}
+
+/* Variant generator */
+.btn-primary {
+  color: #fff;
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+.btn-primary:hover {
+  background-color: #0b5ed7;
+  border-color: #0a58ca;
+}
+.btn-primary:active,
+.btn-primary.active {
+  background-color: #0a53be;
+  border-color: #084298;
+}
+
+.btn-secondary {
+  color: #fff;
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+.btn-secondary:hover {
+  background-color: #5c636a;
+  border-color: #565e64;
+}
+.btn-secondary:active,
+.btn-secondary.active {
+  background-color: #565e64;
+  border-color: #41464b;
+}
+
+.btn-success {
+  color: #fff;
+  background-color: #198754;
+  border-color: #198754;
+}
+.btn-success:hover {
+  background-color: #157347;
+  border-color: #146c43;
+}
+.btn-success:active,
+.btn-success.active {
+  background-color: #146c43;
+  border-color: #0f5132;
+}
+
+.btn-danger {
+  color: #fff;
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+.btn-danger:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+.btn-danger:active,
+.btn-danger.active {
+  background-color: #b02a37;
+  border-color: #842029;
+}
+
+.btn-warning {
+  color: #212529;
+  background-color: #ffc107;
+  border-color: #ffc107;
+}
+.btn-warning:hover {
+  background-color: #ffca2c;
+  border-color: #ffc720;
+}
+.btn-warning:active,
+.btn-warning.active {
+  background-color: #ffca2c;
+  border-color: #ffcd39;
+}
+
+.btn-info {
+  color: #000;
+  background-color: #0dcaf0;
+  border-color: #0dcaf0;
+}
+.btn-info:hover {
+  background-color: #31d2f2;
+  border-color: #25cff2;
+}
+.btn-info:active,
+.btn-info.active {
+  background-color: #3dd5f3;
+  border-color: #27cff4;
+}
+
+.btn-light {
+  color: #000;
+  background-color: #f8f9fa;
+  border-color: #f8f9fa;
+}
+.btn-light:hover {
+  background-color: #e2e6ea;
+  border-color: #dae0e5;
+}
+.btn-light:active,
+.btn-light.active {
+  background-color: #d3d9df;
+  border-color: #cbd3da;
+}
+
+.btn-dark {
+  color: #fff;
+  background-color: #212529;
+  border-color: #212529;
+}
+.btn-dark:hover {
+  background-color: #1c1f23;
+  border-color: #1a1e21;
+}
+.btn-dark:active,
+.btn-dark.active {
+  background-color: #171a1d;
+  border-color: #101113;
+}
+
+.btn-link {
+  font-weight: 400;
+  color: #0d6efd;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+}
+.btn-link:hover {
+  color: #0a58ca;
+  text-decoration: underline;
+}
+.btn-link:active {
+  color: #084298;
+}
+
+/* Utility: block-level button */
+.btn-block {
+  display: block;
+  width: 100%;
+}
+
+/* Filter Form Container */
+.form-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  background-color: #f8f9fa;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e0e0e0;
+  margin-bottom: 1.5rem;
+}
+.form-inline .form-control {
+  margin-right: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 0.25rem;
+  width: 180px;
+  transition: border-color 0.2s;
+}
+.form-inline .form-control:focus {
+  border-color: #0d6efd;
+  outline: none;
+  box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.25);
+}
+.form-inline .btn-primary {
+  margin-left: auto;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+}
+
+/* Summary Stats Box */
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  margin-top: 1.5rem;
+}
+.summary-stats div {
+  text-align: center;
+}
+.summary-stats div strong {
+  display: block;
+  font-size: 1rem;
+  color: #555;
+}
+.summary-stats div span {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.25rem;
+  color: #212529;
+}
+
+/* Pagination Controls */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 1.5rem;
+  gap: 0.5rem;
+}
+.pagination a,
+.pagination span {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #dee2e6;
+  border-radius: 0.25rem;
+}
+.pagination a {
+  color: #0d6efd;
+  text-decoration: none;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+.pagination a:hover {
+  background-color: #e9ecef;
+  border-color: #ced4da;
+}
+.pagination span {
+  color: #495057;
+  background-color: #f8f9fa;
+}
+
+
 </style>
 
 <div class="page-header">
@@ -111,10 +393,39 @@
   </a>
 </div>
 
+<form method="get" class="form-inline mb-3">
+  <label class="mr-2">From:</label>
+  <input 
+    type="datetime-local" 
+    name="date_from" 
+    value="{{ date_from|default_if_none:'' }}" 
+    class="form-control mr-3"/>
+
+  <label class="mr-2">To:</label>
+  <input 
+    type="datetime-local" 
+    name="date_to" 
+    value="{{ date_to|default_if_none:'' }}" 
+    class="form-control mr-3"/>
+
+  <button type="submit" class="btn btn-primary">Filter</button>
+</form>
+
+
+
+<!-- summary stats below table -->
+<div class="summary-stats">
+  <div><strong>Total Orders</strong><span>{{ summary_total_orders }}</span></div>
+  <div><strong>Total Amount</strong><span>{{ summary_total_amount|floatformat:2 }}</span></div>
+  <div><strong>Amount Received</strong><span>{{ summary_received|floatformat:2 }}</span></div>
+  <div><strong>Amount Remaining</strong><span>{{ summary_remaining|floatformat:2 }}</span></div>
+</div>
+
 <table class="table">
   <thead>
     <tr>
       <th>#</th>
+      <th>Order ID</th>
       <th>Table</th>
       <th>Status</th>
       <th>Payment</th>
@@ -122,12 +433,15 @@
       <th>Token #</th>
       <th>Subtotal</th>
       <th>Total Amt</th>
-      <th>Actions</th>
+      <th>Details</th> 
+      <th>Reprint</th>
+      {% comment %} <th>Actions</th> {% endcomment %}
     </tr>
   </thead>
   <tbody>
     {% for order in orders %}
     <tr id="order-{{ order.pk }}">
+      <td>{{ forloop.counter0|add:start_index }}</td>
       <td>{{ order.number }}</td>
       <td>
         {% if order.table %}
@@ -169,12 +483,23 @@
           0.00
         {% endif %}
       </td>
-
+<td>
+        <a href="{% url 'order_detail' order.pk %}"
+           class="btn btn-info btn-sm">
+           Details
+        </a>
+      </td>
       <td>
+        <button
+          class="btn btn-secondary btn-sm btn-reprint"
+          data-order-id="{{ order.pk }}"
+        >Reprint</button>
+      </td>
+      {% comment %} <td>
         <a href="{% url 'order_detail' order.pk %}"><i class="fa fa-eye"></i></a>
         <a href="{% url 'order_update' order.pk %}"><i class="fa fa-edit"></i></a>
         <button class="btn-delete" data-url="{% url 'order_delete' order.pk %}"><i class="fa fa-trash"></i></button>
-      </td>
+      </td> {% endcomment %}
     </tr>
     {% empty %}
     <tr>
@@ -182,7 +507,15 @@
     </tr>
     {% endfor %}
   </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="9"><strong>Page Total</strong></td>
+      <td><strong>{{ page_total|floatformat:2 }}</strong></td>
+      <td colspan="2"></td>
+    </tr>
+  </tfoot>
 </table>
+
 
 
 <div class="pagination">
@@ -222,6 +555,10 @@
           <label for="amount">Amount</label>
           <input type="text" class="form-control" id="amount" name="amount" readonly>
         </div>
+        <div class="form-group">
+          <label for="details">Notes</label>
+          <input type="text" class="form-control" id="details" name="details" readonly>
+        </div>
         <div class="form-group text-center">
           <button type="submit" class="btn-submit-payment">Submit Payment</button>
         </div>
@@ -254,6 +591,7 @@ document.getElementById('paymentForm').addEventListener('submit', function (e) {
     const orderId = document.getElementById('order_id').value;
     const paymentMethod = document.getElementById('payment_method').value;
     const amount = parseFloat(document.getElementById('amount').value);
+    const details = document.getElementById("details").value;
 
     fetch('/orders/close_order/', {
       method: 'POST',
@@ -264,7 +602,8 @@ document.getElementById('paymentForm').addEventListener('submit', function (e) {
       body: JSON.stringify({
         order_id: orderId,
         payment_method: paymentMethod,
-        amount: amount
+        amount: amount,
+        details: details
       })
     })
     .then(response => response.json())
@@ -278,6 +617,32 @@ document.getElementById('paymentForm').addEventListener('submit', function (e) {
 });
 
 </script>
+
+<script>
+  // grab the CSRF token from the template context
+  const csrfToken = '{{ csrf_token }}';
+
+  document.querySelectorAll('.btn-reprint').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const orderId = btn.getAttribute('data-order-id');
+      fetch(`/orders/${orderId}/reprint/`, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken
+        }
+      })
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === 'reprinted') {
+          console.log(`Order #${orderId} reprinted.`);
+        } else {
+          alert('Reprint failed.');
+        }
+      });
+    });
+  });
+</script>
+
 {% endblock %}
 
 

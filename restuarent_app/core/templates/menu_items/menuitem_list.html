@@ -17,7 +17,7 @@
   <thead>
     <tr>
       <th>Image</th><th>Name</th><th>Category</th>
-      <th>Price</th><th>Food Panda Price</th><th>Avail.</th><th>Actions</th>
+      <th>Price</th><th>Food Panda Price</th><th>Rank</th><th>Avail.</th><th>Actions</th>
     </tr>
   </thead>
   <tbody>
@@ -34,6 +34,7 @@
       <td>{{ item.category.name }}</td>
       <td>{{ item.price }}</td>
       <td>{{ item.food_panda_price|default:"" }}</td>
+      <td>{{ item.rank|default:"" }}</td>
       <td>{{ item.is_available|yesno:'Yes,No' }}</td>
       <td>
         <a href="{% url 'menuitem_detail' item.pk %}">

@@ -181,11 +181,12 @@ urlpatterns += [
 
 from .views import (
     TableSessionView, TableItemsView,
-    ClearTableItemsView, TablePrintTokenView
+    ClearTableItemsView, TablePrintTokenView, OrderReprintView
 )
 urlpatterns += [
     path('tables/<int:table_id>/session/', TableSessionView.as_view(), name='table_session'),
     path('tables/<int:table_id>/items/', TableItemsView.as_view(), name='table_items'),
     path('tables/<int:table_id>/items/clear/', ClearTableItemsView.as_view(), name='clear_table_items'),
     path('tables/<int:table_id>/print-token/', TablePrintTokenView.as_view(), name='print_token'),
+    path('orders/<int:pk>/reprint/', OrderReprintView.as_view(), name='order_reprint'),
 ]

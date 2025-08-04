@@ -64,3 +64,29 @@ def compute_recipe_cost(recipe):
     """Back-compat: returns just the cost for the full recipe definition."""
     cost, _ = recipe_cost_and_weight(recipe)
     return cost
+
+
+# core/utils.py
+
+from django.db.models import Max
+from django.utils import timezone
+from .models import Order, TableSession
+
+def get_next_token_number():
+    today = timezone.localtime(timezone.now()).date()
+
+    max_order = (
+        Order.objects
+             .filter(created_at__date=today)
+             .aggregate(Max('token_number'))
+        ['token_number__max']
+        or 0
+    )
+    max_session = (
+        TableSession.objects
+             .filter(created_at__date=today)
+             .aggregate(Max('token_number'))
+        ['token_number__max']
+        or 0
+    )
+    return max(max_order, max_session) + 1

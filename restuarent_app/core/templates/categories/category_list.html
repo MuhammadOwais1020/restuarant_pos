@@ -9,12 +9,20 @@
   <button type="submit"><i class="fa fa-search"></i></button>
 </form>
 <table class="table">
-  <thead><tr><th>Name</th><th>Description</th><th>Actions</th></tr></thead>
+  <thead><tr><th>Name</th><th>Description</th><th>Rank</th><th>Visible?</th><th>Actions</th></tr></thead>
   <tbody>
     {% for cat in categories %}
     <tr id="cat-{{ cat.pk }}">
       <td>{{ cat.name }}</td>
       <td>{{ cat.description }}</td>
+      <td>{{cat.rank|default:""}}</td>
+      <td>
+        {% if cat.show_in_orders %}
+          <span class="badge badge-success">Yes</span>
+        {% else %}
+          <span class="badge badge-secondary">No</span>
+        {% endif %}
+      </td>
       <td>
         <a href="{% url 'category_edit' cat.pk %}" class="btn-edit"><i class="fa fa-edit"></i></a>
         <button class="btn-delete" data-url="{% url 'category_delete' cat.pk %}"><i class="fa fa-trash"></i></button>

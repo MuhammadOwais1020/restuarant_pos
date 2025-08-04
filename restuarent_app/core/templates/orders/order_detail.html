@@ -1,71 +1,316 @@
 {% extends 'base.html' %}
-{% block title %}Order #{{ order.number }}{% endblock %}
+{% block title %}Order #{{ order.number }} Details{% endblock %}
+
+{% block extra_head %}
+<style>
+  .order-detail {
+    max-width: 900px;
+    margin: 2rem auto;
+    padding: 1rem;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  .order-detail h2 {
+    margin-bottom: 1rem;
+    font-size: 1.75rem;
+    color: var(--color-primary);
+  }
+  .order-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+    font-size: 0.95rem;
+  }
+  .order-meta div { background: #f9f9f9; padding: .75rem; border-radius: 4px; }
+  .order-items table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .order-items th, .order-items td {
+    padding: .5rem .75rem;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+    font-size: 0.9rem;
+  }
+  .order-summary {
+    margin-top: 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .order-summary table {
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+  .order-summary td {
+    padding: .25rem .75rem;
+  }
+  .order-summary tr.total-row td {
+    font-weight: bold;
+    border-top: 2px solid var(--color-primary);
+  }
+  .btn-back {
+    margin-bottom: 1rem;
+  }
+
+  /* Base “.btn” */
+.btn {
+  display: inline-block;
+  font-weight: 400;
+  color: #212529;
+  text-align: center;
+  vertical-align: middle;
+  user-select: none;
+  background-color: transparent;
+  border: 1px solid transparent;
+  padding: .375rem .75rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  border-radius: .25rem;
+  transition: color .15s ease-in-out,
+              background-color .15s ease-in-out,
+              border-color .15s ease-in-out,
+              box-shadow .15s ease-in-out;
+  cursor: pointer;
+}
+
+/* Size modifiers */
+.btn-sm {
+  padding: .25rem .5rem;
+  font-size: .875rem;
+  border-radius: .2rem;
+}
+.btn-lg {
+  padding: .5rem 1rem;
+  font-size: 1.25rem;
+  border-radius: .3rem;
+}
+
+/* Disabled state */
+.btn:disabled,
+.btn.disabled {
+  opacity: .65;
+  pointer-events: none;
+}
+
+/* Focus ring */
+.btn:focus {
+  outline: 0;
+  box-shadow: 0 0 0 .25rem rgba(13,110,253,.25);
+}
+
+/* Active state */
+.btn:active,
+.btn.active {
+  background-image: none;
+  box-shadow: inset 0 3px 5px rgba(0,0,0,.125);
+}
+
+/* Variant generator */
+.btn-primary {
+  color: #fff;
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+.btn-primary:hover {
+  background-color: #0b5ed7;
+  border-color: #0a58ca;
+}
+.btn-primary:active,
+.btn-primary.active {
+  background-color: #0a53be;
+  border-color: #084298;
+}
+
+.btn-secondary {
+  color: #fff;
+  background-color: #6c757d;
+  border-color: #6c757d;
+}
+.btn-secondary:hover {
+  background-color: #5c636a;
+  border-color: #565e64;
+}
+.btn-secondary:active,
+.btn-secondary.active {
+  background-color: #565e64;
+  border-color: #41464b;
+}
+
+.btn-success {
+  color: #fff;
+  background-color: #198754;
+  border-color: #198754;
+}
+.btn-success:hover {
+  background-color: #157347;
+  border-color: #146c43;
+}
+.btn-success:active,
+.btn-success.active {
+  background-color: #146c43;
+  border-color: #0f5132;
+}
+
+.btn-danger {
+  color: #fff;
+  background-color: #dc3545;
+  border-color: #dc3545;
+}
+.btn-danger:hover {
+  background-color: #c82333;
+  border-color: #bd2130;
+}
+.btn-danger:active,
+.btn-danger.active {
+  background-color: #b02a37;
+  border-color: #842029;
+}
+
+.btn-warning {
+  color: #212529;
+  background-color: #ffc107;
+  border-color: #ffc107;
+}
+.btn-warning:hover {
+  background-color: #ffca2c;
+  border-color: #ffc720;
+}
+.btn-warning:active,
+.btn-warning.active {
+  background-color: #ffca2c;
+  border-color: #ffcd39;
+}
+
+.btn-info {
+  color: #000;
+  background-color: #0dcaf0;
+  border-color: #0dcaf0;
+}
+.btn-info:hover {
+  background-color: #31d2f2;
+  border-color: #25cff2;
+}
+.btn-info:active,
+.btn-info.active {
+  background-color: #3dd5f3;
+  border-color: #27cff4;
+}
+
+.btn-light {
+  color: #000;
+  background-color: #f8f9fa;
+  border-color: #f8f9fa;
+}
+.btn-light:hover {
+  background-color: #e2e6ea;
+  border-color: #dae0e5;
+}
+.btn-light:active,
+.btn-light.active {
+  background-color: #d3d9df;
+  border-color: #cbd3da;
+}
+
+.btn-dark {
+  color: #fff;
+  background-color: #212529;
+  border-color: #212529;
+}
+.btn-dark:hover {
+  background-color: #1c1f23;
+  border-color: #1a1e21;
+}
+.btn-dark:active,
+.btn-dark.active {
+  background-color: #171a1d;
+  border-color: #101113;
+}
+
+.btn-link {
+  font-weight: 400;
+  color: #0d6efd;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+}
+.btn-link:hover {
+  color: #0a58ca;
+  text-decoration: underline;
+}
+.btn-link:active {
+  color: #084298;
+}
+
+/* Utility: block-level button */
+.btn-block {
+  display: block;
+  width: 100%;
+}
+
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <h1><i class="fa fa-receipt"></i> Order #{{ order.number }}</h1>
-  <a href="{% url 'order_list' %}" class="btn"><i class="fa fa-arrow-left"></i> Back to Orders</a>
-  <a href="{% url 'order_print_token' order.pk %}" target="_blank" class="btn">
-    <i class="fa fa-print"></i> Print Token
-  </a>
-  <a href="{% url 'order_print_bill' order.pk %}" target="_blank" class="btn">
-    <i class="fa fa-print"></i> Print Bill
-  </a>
-</div>
+  <div class="order-detail">
+    <a href="{% url 'order_list' %}" class="btn btn-secondary">&larr; Back to Orders</a>
+    <h2>Order #{{ order.number }} Details</h2>
 
-<div class="detail-container">
-  <p><strong>Date/Time:</strong> {{ order.created_at|date:"Y-m-d H:i" }}</p>
-  <p><strong>Table:</strong> {{ order.table.number if order.table else '–' }}</p>
-  <p><strong>Status:</strong> {{ order.get_status_display }}</p>
-  <p><strong>Token #:</strong> {{ order.token_number }}</p>
+    <div class="order-meta">
+      <div><strong>Table:</strong>
+        {% if order.table %}{{ order.table.number }}{% else %}&ndash;{% endif %}
+      </div>
+      <div><strong>Status:</strong> {{ order.get_status_display }}</div>
+      <div><strong>Token #:</strong> {{ order.token_number }}</div>
+      <div><strong>Created:</strong> {{ order.created_at|date:"Y-m-d H:i" }}</div>
+      <div><strong>Waiter:</strong>
+        {% if order.waiter %}{{ order.waiter.name }}{% else %}&ndash;{% endif %}
+      </div>
+      <div><strong>Mode:</strong>
+        {% if order.isHomeDelivery == "yes" %}Home Delivery
+        {% elif order.isHomeDelivery == "no" %}Take Away
+        {% else %}&ndash;{% endif %}
+      </div>
+    </div>
 
-  <h3><i class="fa fa-list"></i> Items:</h3>
-  <table class="table">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Item / Deal</th>
-        <th>Qty</th>
-        <th>Unit Price</th>
-        <th>Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for oi in order.items.all %}
-      <tr>
-        <td>{{ forloop.counter }}</td>
-        {% if oi.menu_item %}
-          <td>{{ oi.menu_item.name }}</td>
-        {% else %}
-          <td>{{ oi.deal.name }} (Deal)</td>
-        {% endif %}
-        <td>{{ oi.quantity }}</td>
-        <td>{{ oi.unit_price }}</td>
-        <td>{{ oi.line_total|floatformat:2 }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+    <h3>Items</h3>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>#</th><th>Item / Deal</th><th>Qty</th>
+          <th>Unit Price</th><th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in order.items.all %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>
+            {% if item.menu_item %}{{ item.menu_item.name }}
+            {% else %}{{ item.deal.name }}{% endif %}
+          </td>
+          <td>{{ item.quantity }}</td>
+          <td>{{ item.unit_price|floatformat:2 }}</td>
+          <td>{{ item.quantity|floatformat:0 }} × {{ item.unit_price|floatformat:2 }}
+              = {{ item.quantity|floatformat:0|floatformat:2|stringformat:"s"|add:"" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
 
-  <div class="totals">
-    {% with subtotal=0 %}
-      {% for oi in order.items.all %}{% with subtotal=subtotal|add:oi.line_total %}{% endwith %}{% endfor %}
-      <div><span>Subtotal:</span> <span>{{ subtotal|floatformat:2 }}</span></div>
-      <div><span>Discount:</span> <span>{{ order.discount|floatformat:2 }}</span></div>
-      {% with after_disc=subtotal|floatformat:2|floatformat:"-"|add:order.discount %}
-      <div><span>Tax ( {{ order.tax_percentage }}% ):</span> <span>{{ (after_disc * order.tax_percentage / 100)|floatformat:2 }}</span></div>
-      <div><span>Service Charge:</span> <span>{{ order.service_charge|floatformat:2 }}</span></div>
-      {% with grand=((after_disc)+(after_disc*order.tax_percentage/100)+order.service_charge) %}
-      <div><strong>Grand Total:</strong> <strong>{{ grand|floatformat:2 }}</strong></div>
-      {% endwith %}
-      {% endwith %}
-    {% endwith %}
+    <h3>Summary</h3>
+<table class="table order-summary">
+  <tr><th>Subtotal:</th>      <td>{{ subtotal|floatformat:2 }}</td></tr>
+  <tr><th>Discount:</th>      <td>{{ order.discount|floatformat:2 }}</td></tr>
+  <tr><th>Tax ({{ order.tax_percentage }}%):</th>
+      <td>{{ tax_amount|floatformat:2 }}</td></tr>
+  <tr><th>Service Charge:</th><td>{{ order.service_charge|floatformat:2 }}</td></tr>
+  <tr class="font-weight-bold">
+    <th>Grand Total:</th>     <td>{{ grand_total|floatformat:2 }}</td>
+  </tr>
+</table>
+
   </div>
-
-  {% if order.payment %}
-    <h3><i class="fa fa-money-check"></i> Payment:</h3>
-    <p><strong>Method:</strong> {{ order.payment.get_method_display }}</p>
-    <p><strong>Paid Amount:</strong> {{ order.payment.amount }}</p>
-  {% endif %}
-</div>
 {% endblock %}

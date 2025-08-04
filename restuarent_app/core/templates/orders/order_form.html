@@ -662,14 +662,23 @@
 }
 
 
-#print-token-btn {
-  margin-left: var(--space-xs);
-  color: #fff;
-}
-#print-token-btn:hover {
-  background: #d35400;
+#print-token-btn:hover, .take-away-button:hover {
+  border-color: var(--color-primary);
 }
 
+.take-away-button, #print-token-btn{
+      display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    gap: 5px;
+    font-weight: bold;
+}
+
+.active-class{
+  background: #4caf4fda; 
+border: none;
+}
 </style>
 {% endblock %} {% block content %}
 <div class="order-container">
@@ -704,7 +713,7 @@
           <span>Take Away</span>
         </button>
 
-          <button id="print-token-btn" class="btn-action" style="background: #f39c12;">
+          <button id="print-token-btn" class="btn-action">
             <i class="fa fa-print"></i> Print Token
           </button>
       </div>
@@ -712,7 +721,7 @@
     <!-- Order Items Table (scrollable) -->
     <div class="order-items-table">
       <!-- watermark overlay -->
-      <div id="order-watermark" class="watermark"></div>
+      <div id="order-watermark" class="watermark">Take Away Customer</div>
       <table>
         <thead>
           <tr>
@@ -764,7 +773,7 @@
     <div class="right-main">
       <!-- Search Bar (always visible at top of this 80% block) -->
       <div class="search-bar-order">
-        <input id="search-term" type="text" placeholder="Search items or categories …" />
+        <input id="search-term" type="text" placeholder="Search items ..." />
         <button id="search-btn"><i class="fa fa-search"></i></button>
       </div>
 
@@ -939,6 +948,8 @@
         const tbody = document.getElementById('order-items-body');
       tbody.innerHTML = '';
       document.getElementById('order-watermark').textContent = "Take Away";
+      document.getElementById('table-heading').textContent = "Take Away Customer";
+      takeAwayButton.classList.add('active-class');
 
       // 1) Clear any previous “table” selection
   selectedTableId = null;
@@ -1001,7 +1012,7 @@ takeAwayButton.addEventListener = "Take Away Customer";
 }
 
 
-function recalcTotals() {
+{% comment %} function recalcTotals() {
     let subtotal = 0;
     const itemsTable = document.querySelector('.order-items-table tbody');
     const rows = itemsTable.querySelectorAll('tr');
@@ -1023,7 +1034,7 @@ function recalcTotals() {
     const grandTotal = afterDiscount + taxAmt + serviceCharge;
 
     document.getElementById('grand-total-amt').innerText = formatPrice(grandTotal);
-}
+} {% endcomment %}
 
 
         function updateItemPrices() {
@@ -1060,7 +1071,7 @@ function formatPrice(price) {
     return price.toFixed(2); // You can modify the format based on your needs
 }
 
-    // Recalculate totals when prices change
+    {% comment %} // Recalculate totals when prices change
     function recalcTotals() {
         let subtotal = 0;
         const itemsTable = document.querySelector('.order-items-table tbody');
@@ -1083,7 +1094,7 @@ function formatPrice(price) {
         const grandTotal = afterDiscount + taxAmt + serviceCharge;
 
         document.getElementById('grand-total-amt').innerText = formatPrice(grandTotal);
-    }
+    } {% endcomment %}
 
     // Event listener to update totals when quantities change
     document.querySelector('.order-items-table').addEventListener('change', function(event) {
@@ -1131,6 +1142,8 @@ function formatPrice(price) {
         console.warn("Could not fetch initial PrintStatus:", err);
         // If no record exists or error, leave both toggles unchecked (defaults to false).
       });
+
+
   });
 
   // at top of your script you should already have:
@@ -1180,6 +1193,7 @@ allWaiters.forEach(w => {
     // ======================
 
     function recalcTotals() {
+      console.log("This funciton is calling......");
     let subtotal = 0;
     selectedItems.forEach(it => {
       subtotal += it.quantity * it.unit_price;
@@ -1206,8 +1220,18 @@ allWaiters.forEach(w => {
           badge.className = 'status';
           btn.appendChild(badge);
         }
+        console.log("Subtotal: " + subtotal)
+        if(subtotal != 0){
           badge.innerText = `₨${subtotal.toFixed(2)}`;
           btn.classList.add('active');
+          badge.style.background = "#4caf50";
+        }else if(subtotal == 0){
+          console.log("subtotal else");
+          badge.innerText = `₨${subtotal.toFixed(2)}`;
+          btn.classList.remove('active');
+          badge.innerText = '';
+          badge.style.background = "#f4f4f4";
+        }
       }
     }
   }
@@ -1220,9 +1244,9 @@ allWaiters.forEach(w => {
       selectedItems.forEach((it, idx) => {
         const amount = (it.quantity * it.unit_price).toFixed(2);
         const tr = document.createElement('tr');
-tr.setAttribute('data-source-type', it.type);
-tr.setAttribute('data-source-id',   it.id);
-tr.setAttribute('data-index',       idx);
+        tr.setAttribute('data-source-type', it.type);
+        tr.setAttribute('data-source-id',   it.id);
+        tr.setAttribute('data-index',       idx);
 
         tr.innerHTML = `
           <td>${idx + 1}</td>
@@ -1394,6 +1418,21 @@ tr.setAttribute('data-index',       idx);
     // ======================
     document.addEventListener('DOMContentLoaded', () => {
 
+      // grab the search input
+const searchInput = document.getElementById('search-term');
+
+searchInput.addEventListener('input', () => {
+  const term = searchInput.value.trim().toLowerCase();
+
+  // clear any category/deals highlight
+  document.querySelectorAll('.category-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('deals-button').classList.remove('selected');
+
+    renderMenuItems(null, term);
+
+});
+
+
         homeDelivery.addEventListener('change', () => {
   refreshWatermark(homeDelivery.checked ? "yes" : "no");
   });
@@ -1481,40 +1520,38 @@ tr.setAttribute('data-index',       idx);
     const st = tr.dataset.sourceType;
     const sid = tr.dataset.sourceId;
 
-    if (!selectedTableId) {
-      alert('Please select a table first');
-      return;
-    }
+              if (selectedTableId) {
+              
 
-    fetch(`/tables/${selectedTableId}/items/`, {
-      method: 'DELETE',
-      headers: {
-        'X-CSRFToken': csrftoken,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({ source_type: st, source_id: sid })
-    })
-    .then(resp => {
-      if (!resp.ok) {
-        // pull down the error response so you can debug
-        return resp.json().then(json => {
-          console.error('DELETE /items/ error:', json);
-          throw new Error(json.error || 'Delete failed');
-        });
-      }
-      return resp.json();
-    })
-    .then(json => {
-      if (json.status === 'deleted') {
-        loadTableItems(selectedTableId);
-      }
-    })
-    .catch(err => {
-      console.error(err);
-      alert('Could not remove item.');
-    });
-
+              fetch(`/tables/${selectedTableId}/items/`, {
+                method: 'DELETE',
+                headers: {
+                  'X-CSRFToken': csrftoken,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                },
+                body: JSON.stringify({ source_type: st, source_id: sid })
+              })
+              .then(resp => {
+                if (!resp.ok) {
+                  // pull down the error response so you can debug
+                  return resp.json().then(json => {
+                    console.error('DELETE /items/ error:', json);
+                    throw new Error(json.error || 'Delete failed');
+                  });
+                }
+                return resp.json();
+              })
+              .then(json => {
+                if (json.status === 'deleted') {
+                  loadTableItems(selectedTableId);
+                }
+              })
+              .catch(err => {
+                console.error(err);
+                alert('Could not remove item.');
+              });
+            }
               if (e.target.closest('.btn-remove-item')) {
             const idx = parseInt(
               e.target.closest('tr').dataset.index, 10
@@ -1580,6 +1617,13 @@ tr.setAttribute('data-index',       idx);
           document.getElementById('discount').value = 0;
           document.getElementById('tax-perc').value = 0;
           document.getElementById('service-charge').value = 0;
+
+          // after successful create/update & print:
+          fetch(`/tables/${selectedTableId}/items/clear/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': csrftoken }
+          }).then(() => loadTableItems(selectedTableId));
+
           showAlert('success', 'Order reset');
         });
 
@@ -1668,18 +1712,19 @@ tr.setAttribute('data-index',       idx);
         // Show the error from server (e.g. “Print failed: …”)
         showAlert('error', data.error);
       } else {
-
+        if(selectedTableId){
           // after successful create/update & print:
           fetch(`/tables/${selectedTableId}/items/clear/`, {
             method: 'DELETE',
             headers: { 'X-CSRFToken': csrftoken }
           }).then(() => loadTableItems(selectedTableId));
+        }
 
           selectedItems = [];
-          renderOrderItemsTable();
           document.getElementById('discount').value = 0;
           document.getElementById('tax-perc').value = 0;
           document.getElementById('service-charge').value = 0;
+          renderOrderItemsTable();
 
         showAlert('success', 'Order saved & sent to printer!');
 
@@ -1694,12 +1739,24 @@ tr.setAttribute('data-index',       idx);
     // NEW handler:
   tableButtons.forEach(btn => {
     btn.addEventListener('click', () => {
-      
+      takeAwayButton.classList.remove('active-class');
       selectedTableId = btn.dataset.tableId || null;
       refreshWatermark(selectedTableId);
       loadTableItems(selectedTableId);
-      const sess = fetch(`/tables/${selectedTableId}/session/`).then(r=>r.json());
-      waiterSelect.value    = sess.waiter_id || '';
+      
+      fetch(`/tables/${selectedTableId}/session/`)
+      .then(r => r.json())
+      .then(sess => {
+        waiterSelect.value = sess.waiter_id || '';
+      })
+      .catch(err => {
+        console.error("Could not load table session:", err);
+        waiterSelect.value = '';
+      });
+
+      //const sess = fetch(`/tables/${selectedTableId}/session/`).then(r=>r.json());
+      //waiterSelect.value    = sess.waiter_id || '';
+
 
       document.getElementById('table-heading').innerText =
               selectedTableId
@@ -1732,7 +1789,7 @@ printTokenBtn.addEventListener('click', () => {
   .then(r => r.json())
   .then(json => {
     if (json.status === 'printed') {
-      alert(`Successfully printed ${json.count} new item tokens.`);
+      {% comment %} alert(`Successfully printed ${json.count} new item tokens.`); {% endcomment %}
     } else if (json.status === 'nothing_to_print') {
       alert('No new items to print.');
     }
@@ -1749,9 +1806,11 @@ printTokenBtn.addEventListener('click', () => {
   let label;
   if (text == "yes") {
     label = 'Home Delivery';
+    document.getElementById('table-heading').textContent = "Home Delivery";
   }
   else if(text == "no"){
     label = ""
+    document.getElementById('table-heading').textContent = "";
   } else if (text == "takeaway") {
     label = 'Take Away';
   } else {

@@ -2,6 +2,7 @@
 {% block content %}
 <h1>Category: {{ category.name }}</h1>
 <p>{{ category.description }}</p>
+<p>{{ category.rank }}</p>
 <a href="{% url 'category_edit' category.pk %}" class="btn"><i class="fa fa-edit"></i> Edit</a>
 <a href="{% url 'category_list' %}" class="btn"><i class="fa fa-arrow-left"></i> Back</a>
 {% endblock %}

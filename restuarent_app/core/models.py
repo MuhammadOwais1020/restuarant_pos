@@ -2,6 +2,9 @@ from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
+# core/views.py  (near the top of your file)
+from django.db.models import Max
+from django.utils import timezone
 
 import logging
 logger = logging.getLogger(__name__)
@@ -60,8 +63,13 @@ class Waiter(models.Model):
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
+    show_in_orders = models.BooleanField(
+        default=True,
+        help_text="If false, this category will be hidden in the order‐taking UI."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    rank = models.IntegerField(null=True, blank=True)
 
     class Meta:
         verbose_name_plural = "Categories"
@@ -86,6 +94,7 @@ class MenuItem(models.Model):
     image = models.ImageField(upload_to='menu_items/', blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    rank = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} – {self.category.name}"
@@ -117,6 +126,7 @@ class Deal(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    rank = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.name} (Deal)"
@@ -281,6 +291,7 @@ class Payment(models.Model):
     order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='payment')
     amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     method = models.CharField(max_length=10, choices=PAYMENT_METHODS)
+    details = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -530,6 +541,7 @@ class TableSession(models.Model):
     home_delivery = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    token_number = models.PositiveIntegerField(null=True, blank=True)
 
     def __str__(self):
         return f"Table {self.table.number} Session"
