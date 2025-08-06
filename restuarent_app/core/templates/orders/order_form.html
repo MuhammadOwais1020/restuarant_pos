@@ -573,7 +573,8 @@
     border: 1px solid #ccc;
     border-radius: 4px;
     box-sizing: border-box;
-    width: auto; /* Auto width for select box */
+    width: 100%;
+
 }
 
 /* Styling for Payment Method section */
@@ -678,6 +679,42 @@
 .active-class{
   background: #4caf4fda; 
 border: none;
+}
+
+/* place this in your <style> block (or your CSS file) */
+.customer-info-row {
+  display: flex;
+
+  padding: 10px;
+}
+
+.customer-info-row .form-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-info-row label {
+  font-weight: 600;
+  margin-bottom: var(--space-xs);
+  font-size: 0.95rem;
+}
+
+.customer-info-row input[type="text"] {
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.9rem;
+  border: 1px solid #ccc;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.customer-info-row input[type="text"]:focus {
+  border-color: var(--color-primary);
+}
+
+#customer-info-row{
+  display: none;
 }
 </style>
 {% endblock %} {% block content %}
@@ -801,7 +838,7 @@ border: none;
 
     <!-- BOTTOM 20%: Action Buttons (Reset / Create/Update / New / Paid) -->
     <div class="right-bottom-actions">
-      <div class="waiter-selector" style="padding:1rem; background:#fff; border-bottom:1px solid #e0e0e0;">
+      <div class="waiter-selector" style="padding:10px; background:#fff; border-bottom:1px solid #e0e0e0;">
       <div>
         <label for="waiter-select"><strong>Waiter:</strong></label>
       <select id="waiter-select" style="margin-left:.5rem; padding:.25rem;">
@@ -826,6 +863,30 @@ border: none;
       </div>
 
       </div>
+
+      <!-- Add this where you want the Mobile & Address row -->
+      <div class="customer-info-row" id="customer-info-row">
+        <div class="form-group">
+          <label for="mobile_no">Mobile No</label>
+          <input
+            type="text"
+            id="mobile_no"
+            name="mobile_no"
+            placeholder="Enter customer mobile number"
+          />
+        </div>
+        <div class="form-group">
+          <label for="customer_address">Customer Address</label>
+          <input
+            type="text"
+            id="customer_address"
+            name="customer_address"
+            placeholder="Enter customer address"
+          />
+        </div>
+      </div>
+
+
       <div class="toggle-actions" style="display:none">
       <div class="toggle-source">
             <label class="toggle-switch-container" for="food-panda-source">
@@ -959,7 +1020,8 @@ border: none;
 
   // 3) Clear out the in-memory buffer
   selectedItems = [];
-takeAwayButton.addEventListener = "Take Away Customer";
+  takeAwayButton.addEventListener = "Take Away Customer";
+  document.getElementById("customer-info-row").style.display="flex";
   // 5) Re-render the table
   renderOrderItemsTable();
     });
@@ -1689,13 +1751,21 @@ searchInput.addEventListener('input', () => {
 
       // 11) Paid button: create (if needed) and mark “paid” & print receipts
       document.querySelector('.btn-paid').addEventListener('click', () => {
-        console.log("Button has been clicked.")
-    const discount = parseFloat(document.getElementById('discount').value) || 0;
-    const taxPerc  = parseFloat(document.getElementById('tax-perc').value) || 0;
-    const service  = parseFloat(document.getElementById('service-charge').value) || 0;
+        if (selectedItems.length === 0) {
+        showAlert('error', 'You must add at least one item before closing the order.');
+        return;
+      }
 
-    const url = getOrderSaveUrl();
-    const payload = buildPayload('paid');
+        document.querySelector('.btn-paid').disabled  = true;
+        document.querySelector('.btn-paid').innerHtml = '<i class="fa fa-spinner fa-spin"></i> Submiting Order';
+
+        console.log("Button has been clicked.")
+        const discount = parseFloat(document.getElementById('discount').value) || 0;
+        const taxPerc  = parseFloat(document.getElementById('tax-perc').value) || 0;
+        const service  = parseFloat(document.getElementById('service-charge').value) || 0;
+ 
+        const url = getOrderSaveUrl();
+        const payload = buildPayload('paid');
 
     fetch(url, {
       method: 'POST',
@@ -1733,6 +1803,10 @@ searchInput.addEventListener('input', () => {
     .catch(err => {
       console.error("Fetch error:", err);
       showAlert('error', 'An unexpected error occurred.');
+    })
+    .finally(() => {
+      document.querySelector('.btn-paid').disabled = false;
+      document.querySelector('.btn-paid').innerHTML = '<i class="fa fa-money-bill"></i> Close / Paid';
     });
   });
 
@@ -1743,7 +1817,7 @@ searchInput.addEventListener('input', () => {
       selectedTableId = btn.dataset.tableId || null;
       refreshWatermark(selectedTableId);
       loadTableItems(selectedTableId);
-      
+      document.getElementById("customer-info-row").style.display = "none";
       fetch(`/tables/${selectedTableId}/session/`)
       .then(r => r.json())
       .then(sess => {
@@ -1807,10 +1881,12 @@ printTokenBtn.addEventListener('click', () => {
   if (text == "yes") {
     label = 'Home Delivery';
     document.getElementById('table-heading').textContent = "Home Delivery";
+    document.getElementById("customer-info-row").style.display = "flex";
   }
   else if(text == "no"){
     label = ""
     document.getElementById('table-heading').textContent = "";
+    document.getElementById("customer-info-row").style.display = "none";
   } else if (text == "takeaway") {
     label = 'Take Away';
   } else {
@@ -1822,8 +1898,13 @@ printTokenBtn.addEventListener('click', () => {
   function buildPayload(action) {
     const source = foodPandaCheckbox.checked ? "food_panda" : "walk_in";
     const isHomeDelivery= homeDelivery.checked ? "yes" : "no";
+    
+    const mobileNo = document.getElementById("mobile_no").value || "";
+    const customerAddress = document.getElementById("customer_address").value || "";
+    
     console.log("IS HOME DELIVERY: "+ isHomeDelivery);
     console.log("IS Food Panda: "+ source);
+    
     const base = {
       discount: parseFloat(document.getElementById('discount').value)||0,
       tax_percentage: parseFloat(document.getElementById('tax-perc').value)||0,
@@ -1841,6 +1922,8 @@ printTokenBtn.addEventListener('click', () => {
     base.table_id = selectedTableId;
     base.waiter_id = waiterSelect.value || null;
     base.isHomeDelivery = isHomeDelivery;
+    base.mobileNo = mobileNo;
+    base.customerAddress = customerAddress;
     return base;
   }
     // NOW compute the URL for ANY save operation (create/update):

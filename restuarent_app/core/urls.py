@@ -23,7 +23,9 @@ from .views import (
     SupplierDetailView, SupplierUpdateView, SupplierDeleteView, close_order
 )
 
+
 urlpatterns = [
+    
         
     path('orders/close_order/', close_order, name='close_order'),   
     path(

@@ -180,6 +180,8 @@ class Order(models.Model):
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     tax_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     service_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    mobile_no = models.CharField(max_length=20, null=True, blank=True)
+    customer_address = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     # Token number resets each day at 12:00 PM
@@ -571,3 +573,56 @@ class TableMenuItem(models.Model):
     def __str__(self):
         label = 'Menu' if self.source_type=='menu' else 'Deal'
         return f"Table {self.session.table.number}: {self.quantity} x {label}({self.source_id})"
+    
+
+# core/models.py
+from django.db import models
+from django.utils import timezone
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class ExpenseCategory(models.TextChoices):
+    SALARY      = 'salary',      'Salary'
+    ELECTRICITY = 'electricity', 'Electricity'
+    GAS         = 'gas',         'Gas'
+    STATIONERY  = 'stationery',  'Stationery'
+    MAINTENANCE = 'maintenance', 'Maintenance'
+    SOFTWARE    = 'software',    'Software'
+    OTHER       = 'other',       'Other'
+
+class Expense(models.Model):
+    date        = models.DateField(default=timezone.now)
+    category    = models.CharField(max_length=20, choices=ExpenseCategory.choices)
+    amount      = models.DecimalField(max_digits=12, decimal_places=2)
+    description = models.CharField(max_length=255, blank=True)
+    created_by  = models.ForeignKey(User, on_delete=models.PROTECT)
+
+    def __str__(self):
+        return f"{self.date} — {self.get_category_display()}: ₨{self.amount}"
+
+class BankAccount(models.Model):
+    name           = models.CharField(max_length=100, help_text="e.g. HBL Current A/C")
+    account_number = models.CharField(max_length=50, blank=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+class CashFlow(models.Model):
+    IN  = 'in'
+    OUT = 'out'
+    FLOW_TYPE = [
+      (IN,  'Cash In'),
+      (OUT, 'Cash Out'),
+    ]
+
+    date         = models.DateField(default=timezone.now)
+    flow_type    = models.CharField(max_length=3, choices=FLOW_TYPE)
+    amount       = models.DecimalField(max_digits=12, decimal_places=2)
+    bank_account = models.ForeignKey(BankAccount, on_delete=models.SET_NULL, null=True, blank=True)
+    description  = models.CharField(max_length=255, blank=True)
+    created_by   = models.ForeignKey(User, on_delete=models.PROTECT)
+
+    def __str__(self):
+        return f"{self.date} — {self.get_flow_type_display()}: ₨{self.amount} ({self.bank_account or 'Cash'})"

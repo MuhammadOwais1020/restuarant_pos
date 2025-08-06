@@ -500,6 +500,8 @@ class OrderCreateView(LoginRequiredMixin, View):
         is_food_panda = data.get("source")
         waiter_id = data.get("waiter_id") or None
         is_home_delivery = data.get("isHomeDelivery") or None
+        mobile_no  = data.get("mobileNo") or None
+        customer_address = data.get("customerAddress") or None
 
         # Fetch the Waiter instance (if waiter_id is provided and valid)
         if waiter_id:
@@ -527,6 +529,8 @@ class OrderCreateView(LoginRequiredMixin, View):
             source=source_value,
             waiter=waiter,
             isHomeDelivery = is_home_delivery,
+            mobile_no = mobile_no,
+            customer_address = customer_address,
             created_at=my_datetime,
         )
         
@@ -625,9 +629,11 @@ class OrderCreateView(LoginRequiredMixin, View):
                             if pizza_chai:
                                 token_data = build_token_bytes_for_items(order, pizza_chai, "PIZZA & CHAI TOKEN")
                                 send_to_printer(token_data)
+                                # print(f"PIZZA CHAI: {pizza_chai}")
                             if others:
                                 token_data = build_token_bytes_for_items(order, others, "KITCHEN TOKEN")
                                 send_to_printer(token_data)
+                                # print(f"Others: {others}")
 
                     if bill_enabled:
                         bill_data = build_bill_bytes(order, is_food_panda, "Customer Copy")
@@ -996,6 +1002,13 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
             lines.append(b"HOME DELIVERY\n\n")
         if order.isHomeDelivery == "no":
             lines.append(b"TAKE AWAY\n\n")
+        if order.mobile_no:
+            mobileNo = str(order.mobile_no).encode("ascii")
+            lines.append(b"Customer Mobile: " + mobileNo + b"\n")
+        if order.customer_address:
+            customerAddress = str(order.customer_address).encode("ascii")
+            lines.append(b"Customer Add: " + customerAddress + b"\n")
+
     if order.waiter:
         waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
         lines.append(waiter_bytes)
@@ -2428,6 +2441,7 @@ class TablePrintTokenView(View):
                 pizza_chai,
                 header_label="PIZZA & CHAI TOKEN"
             )
+            print(f"Pizza: {pizza_chai}")
             send_to_printer(payload)
 
         if others:
@@ -2436,6 +2450,7 @@ class TablePrintTokenView(View):
                 others,
                 header_label="KITCHEN TOKEN"
             )
+            print(f"Others: {others}")
             send_to_printer(payload)
         
 
@@ -2761,6 +2776,7 @@ class TablePrintTokenView(View):
                 pizza_chai_pairs,
                 header_label="PIZZA & CHAI TOKEN"
             )
+            print(f"Pizza: {pizza_chai_pairs}")
             send_to_printer(payload)
 
         # 5) Print normal Kitchen token
@@ -2770,6 +2786,7 @@ class TablePrintTokenView(View):
                 other_pairs,
                 header_label="KITCHEN TOKEN"
             )
+            print(f"Others: {other_pairs}")
             send_to_printer(payload)
 
         # 6) Mark printed_quantity
@@ -2835,3 +2852,4 @@ def build_group_token_bytes(session, items_with_delta, header_label):
     lines.append(GS + b"\x56" + b"\x00")              # full cut
 
     return b"".join(lines)
+
