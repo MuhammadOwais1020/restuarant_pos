@@ -284,98 +284,94 @@ from django.db.models import F, Sum, ExpressionWrapper, DecimalField
 from .models import Order
 from django.utils.dateparse import parse_datetime
 
+from decimal import Decimal
+from django.db.models import Sum, F, ExpressionWrapper, DecimalField
+from django.utils.dateparse import parse_datetime
+from django.utils import timezone
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic import ListView
+from .models import Order, Payment
+
 class OrderListView(LoginRequiredMixin, ListView):
     model = Order
     template_name = 'orders/order_list.html'
     context_object_name = 'orders'
     paginate_by = 20
 
+    def get_paginate_by(self, queryset):
+        # Turn off pagination if either date filter is present
+        if self.request.GET.get('date_from') or self.request.GET.get('date_to'):
+            return None
+        return super().get_paginate_by(queryset)
+
     def get_queryset(self):
-        # Step 1: Base queryset with select_related
         qs = super().get_queryset().select_related('table', 'created_by').order_by('-created_at')
 
-        # Step 2: Apply filters from GET params
-        q = self.request.GET.get('q')
-        status = self.request.GET.get('status')
+        q         = self.request.GET.get('q')
+        status    = self.request.GET.get('status')
         date_from = self.request.GET.get('date_from')
-        date_to = self.request.GET.get('date_to')
+        date_to   = self.request.GET.get('date_to')
 
         if q:
             qs = qs.filter(number__icontains=q)
         if status:
             qs = qs.filter(status=status)
-        # Parse the datetime‐local strings into real datetimes
-        if date_from:
-            dt_from = parse_datetime(date_from)
-            if dt_from:
-                dt_from = timezone.make_aware(dt_from)
-                qs = qs.filter(created_at__gte=dt_from)
-        if date_to:
-            dt_to = parse_datetime(date_to)
-            if dt_to:
-                dt_to = timezone.make_aware(dt_to)
-                qs = qs.filter(created_at__lte=dt_to)
 
-        # Step 3a: Define an expression for line_total = quantity * unit_price
-        #        We'll sum this expression across all related OrderItem rows.
-        line_total_expr = ExpressionWrapper(
+        if date_from:
+            dt = parse_datetime(date_from)
+            if dt:
+                qs = qs.filter(created_at__gte=timezone.make_aware(dt))
+        if date_to:
+            dt = parse_datetime(date_to)
+            if dt:
+                qs = qs.filter(created_at__lte=timezone.make_aware(dt))
+
+        line_total = ExpressionWrapper(
             F('items__quantity') * F('items__unit_price'),
             output_field=DecimalField(max_digits=12, decimal_places=2)
         )
-
-        # Annotate each Order with 'subtotal' = SUM(line_total_expr)
-        qs = qs.annotate(subtotal=Sum(line_total_expr))
-
-        # Step 3b: Now annotate 'total_amount'
-        # total_amount = (subtotal - discount) + (subtotal * tax_percentage/100) + service_charge
+        qs = qs.annotate(subtotal=Sum(line_total))
         qs = qs.annotate(
             total_amount=ExpressionWrapper(
-                (
-                    F('subtotal')
-                    - F('discount')
-                    + (F('subtotal') * F('tax_percentage') / 100)
-                    + F('service_charge')
-                ),
+                (F('subtotal') - F('discount'))
+                + (F('subtotal') * F('tax_percentage') / 100)
+                + F('service_charge'),
                 output_field=DecimalField(max_digits=12, decimal_places=2)
             )
         )
-
         return qs
-    
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        orders_on_page = ctx['orders']  # current page
+        orders_list = ctx['orders']  # page or full list
 
-        # Serial numbering across pages
-        # page_obj.start_index gives 1-based index of first item
-        ctx['start_index'] = ctx['page_obj'].start_index()
+        # serial numbering
+        if ctx.get('is_paginated'):
+            ctx['start_index'] = ctx['page_obj'].start_index()
+        else:
+            ctx['start_index'] = 1
 
-        # Compute per-page total
-        from decimal import Decimal
-        page_total = sum(
-            (o.total_amount or Decimal('0'))
-            for o in orders_on_page
+        # per‐page (or overall) total
+        ctx['page_total'] = sum(
+            (o.total_amount or Decimal('0')) for o in orders_list
         )
-        ctx['page_total'] = page_total
 
-        # Compute summary stats for this filtered set
-        all_filtered = self.get_queryset()
-        ctx['summary_total_orders'] = all_filtered.count()
-        ctx['summary_total_amount'] = all_filtered.aggregate(
-            total=Sum(F('items__quantity')*F('items__unit_price'))
+        # summary for the entire filtered set
+        full_qs = self.get_queryset()
+        ctx['summary_total_orders']  = full_qs.count()
+        ctx['summary_total_amount']  = full_qs.aggregate(
+            total=Sum(F('items__quantity') * F('items__unit_price'))
         )['total'] or Decimal('0')
-        # Assuming Payment model records actual received amounts
-        ctx['summary_received'] = Payment.objects.filter(
-            order__in=all_filtered
+        ctx['summary_received']      = Payment.objects.filter(
+            order__in=full_qs
         ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
-        ctx['summary_remaining'] = ctx['summary_total_amount'] - ctx['summary_received']
+        ctx['summary_remaining']     = ctx['summary_total_amount'] - ctx['summary_received']
 
-        # Preserve date filters in context for form
+        # keep the filters in the form
         ctx['date_from'] = self.request.GET.get('date_from', '')
-        ctx['date_to'] = self.request.GET.get('date_to', '')
+        ctx['date_to']   = self.request.GET.get('date_to', '')
 
         return ctx
-# core/views.py
 
 import json
 from django.shortcuts import render, get_object_or_404
@@ -502,6 +498,7 @@ class OrderCreateView(LoginRequiredMixin, View):
         is_home_delivery = data.get("isHomeDelivery") or None
         mobile_no  = data.get("mobileNo") or None
         customer_address = data.get("customerAddress") or None
+        customer_name = data.get("customerName") or None
 
         # Fetch the Waiter instance (if waiter_id is provided and valid)
         if waiter_id:
@@ -530,6 +527,7 @@ class OrderCreateView(LoginRequiredMixin, View):
             waiter=waiter,
             isHomeDelivery = is_home_delivery,
             mobile_no = mobile_no,
+            customer_name = customer_name,
             customer_address = customer_address,
             created_at=my_datetime,
         )
@@ -931,19 +929,24 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
     lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x10 → double width, normal height
     lines.append(b"TOKEN #: " + token_str + b"\n\n")
     
-    lines.append(esc + b"\x21" + b"\x00")   # back to normal
 
-    # ─── Date / Time ──────────────────────────────────────────────────────
-    now_str = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
-    lines.append(esc + b"\x61" + b"\x00")   # left align
-    lines.append(b"Date: " + now_str + b"\n")
-    if order.waiter:
-        waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
-        lines.append(waiter_bytes)
+    lines.append(esc + b"\x61" + b"\x01")
+    lines.append(esc + b"\x21" + b"\x30")
+
     if order.isHomeDelivery == "yes":
         lines.append(b"HOME DELIVERY\n\n")
     if order.isHomeDelivery == "no":
         lines.append(b"TAKE AWAY\n\n")
+
+    lines.append(esc + b"\x21" + b"\x00")   # back to normal
+    if order.waiter:
+        waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
+        lines.append(waiter_bytes)
+
+    
+    now_str = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    lines.append(esc + b"\x61" + b"\x00")   # left align
+    lines.append(b"Date: " + now_str + b"\n")
     lines.append(b"-" * 32 + b"\n")         # 32-char full width separator
     lines.append(esc + b"\x21" + b"\x10") 
 
@@ -958,7 +961,7 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
         lines.append(serial_number + b". " + name_field + b"  x" + qty_bytes + b"\n")
         i += 1
 
-    lines.append(b"\n\n\n\n")
+    lines.append(b"\n\n\n\n\n")
     # ─── Feed + Cut ────────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")    # full cut
@@ -1002,6 +1005,9 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
             lines.append(b"HOME DELIVERY\n\n")
         if order.isHomeDelivery == "no":
             lines.append(b"TAKE AWAY\n\n")
+        if order.customer_name:
+            customerName = str(order.customer_name).encode("ascii")
+            lines.append(b"Customer Name: " + customerName + b"\n")
         if order.mobile_no:
             mobileNo = str(order.mobile_no).encode("ascii")
             lines.append(b"Customer Mobile: " + mobileNo + b"\n")
@@ -1075,7 +1081,7 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
     # Developer / tagline / contact
     lines.append(b"Developed by Qonkar Technologies\n")
     lines.append(b"www.qonkar.com | +92 305 8214945\n")
-    lines.append(b"\n" * 4)
+    lines.append(b"\n" * 5)
 
     # ─── Cut paper (full) ─────────────────────────────────────────────────
     lines.append(gs + b"\x56" + b"\x00")
@@ -1328,16 +1334,12 @@ class TableUpdateView(UpdateView):
 
 
 def build_token_bytes_for_deltas(order, items_with_delta):
-    """
-    Build an ESC/POS payload containing only the given OrderItem queryset.
-    """
     esc = b"\x1B"
     gs  = b"\x1D"
     lines = []
     
     # ─── Restaurant name, larger/bold ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")   # center alignment
-    # lines.append(esc + b"\x21" + b"\x30")   # double height & width
     lines.append(b"Cafe Kunj\n")
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
@@ -1357,7 +1359,7 @@ def build_token_bytes_for_deltas(order, items_with_delta):
 
     # ─── Date / Time ──────────────────────────────────────────────────────
     now_str = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
-    lines.append(esc + b"\x61" + b"\x00")   # left align
+    lines.append(esc + b"\x61" + b"\x00")  # left align
     lines.append(b"Date: " + now_str + b"\n")
     if order.waiter:
         waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
@@ -1372,7 +1374,7 @@ def build_token_bytes_for_deltas(order, items_with_delta):
         qty_bytes  = str(delta).rjust(3).encode("ascii")
         lines.append(name_field + b"  x" + qty_bytes + b"\n")
 
-    lines.append(b"\n\n\n")
+    lines.append(b"\n\n\n\n\n")
     # ─── feed + cut ─────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")    # full cut
@@ -2378,7 +2380,7 @@ def build_full_session_token_bytes(session, items):
         qty_f   = str(ti.quantity).rjust(3).encode()             # "  3", etc.
         lines.append(idx_f + b"  " + name_f + b"  " + qty_f + b"\n")
 
-    lines.append(b"\n\n\n")
+    lines.append(b"\n\n\n\n\n")
     # — Cut —
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")  # full cut
@@ -2552,7 +2554,8 @@ def build_session_token_bytes(session, items_with_delta):
                 name.ljust(18).encode("ascii","ignore") + b"  " +
                 str(d).rjust(3).encode() + b"\n"
             )
-
+    
+    lines.append(b"\n\n\n\n\n")
     # ─── Feed + Cut ────────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")      # full cut
@@ -2727,6 +2730,8 @@ def build_token_bytes_for_items(order, items, header_label):
         qty = str(oi.quantity).rjust(3).encode("ascii")
         lines.append(f"{idx}. ".encode("ascii") + name_field + b" x" + qty + b"\n")
     # 6) Cut
+
+    lines.append(b"\n\n")
     lines.append(b"\n\n\n\n" + GS + b"\x56" + b"\x00")
     return b"".join(lines)
 
@@ -2847,9 +2852,55 @@ def build_group_token_bytes(session, items_with_delta, header_label):
         qty_b = str(delta).rjust(3).encode()
         lines.append(idx_b + b"  " + name_b + b"  " + qty_b + b"\n")
 
+    lines.append(b"\n\n\n\n\n")
     # ── Cut ───────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(GS + b"\x56" + b"\x00")              # full cut
 
     return b"".join(lines)
 
+
+
+# core/views.py
+
+import json
+from django.views import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+
+from .models import TableSession, Table
+
+class TableSessionSwitchView(LoginRequiredMixin, View):
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            old_id = data['from_table']
+            new_id = data['to_table']
+        except (KeyError, json.JSONDecodeError):
+            return JsonResponse({'error': 'Invalid payload'}, status=400)
+
+        # 1) Fetch the existing session on the old table
+        try:
+            session = TableSession.objects.get(table_id=old_id)
+        except TableSession.DoesNotExist:
+            return JsonResponse({'error': 'No active session on your current table.'}, status=400)
+
+        # 2) Ensure target table is truly available
+        #    (if a session exists there, it must have no picked_items)
+        existing = TableSession.objects.filter(table_id=new_id).first()
+        if existing and existing.picked_items.exists():
+            return JsonResponse({'error': 'That table is not available.'}, status=400)
+        # delete any empty session
+        if existing:
+            existing.delete()
+
+        # 3) Re-assign our session to the new table
+        session.table_id = new_id
+        session.save(update_fields=['table'])
+
+        # 4) Update occupancy flags
+        Table.objects.filter(pk=old_id).update(is_occupied=False)
+        Table.objects.filter(pk=new_id).update(is_occupied=True)
+
+        return JsonResponse({'status': 'ok', 'new_table': new_id})

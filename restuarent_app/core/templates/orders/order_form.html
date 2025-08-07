@@ -732,7 +732,7 @@ border: none;
       <span> Token #: {% if order and order.token_number %} {{ order.token_number }} {% else %} &mdash; {% endif %} </span>
     </div>
     <div class="table-selector">
-      <h3 id="table-heading">Take-Away Customer</h3>
+      <h3 id="table-heading" style="font-size: 26px;">Take-Away Customer</h3>
       <div class="tables-grid">
         {% for table in tables %}
         <button class="table-btn {% if table.has_items %} active{% endif %} {% if order and order.table_id == table.id %} selected{% endif %}" data-table-id="{{ table.id }}">
@@ -745,14 +745,19 @@ border: none;
         </button>
         {% endfor %}
 
-        <button class="take-away-button" id="take-away-button" data-table-id="">
-          <i class="fa fa-user fa-2x"></i>
-          <span>Take Away</span>
-        </button>
-
           <button id="print-token-btn" class="btn-action">
             <i class="fa fa-print"></i> Print Token
           </button>
+
+          <button id="btn-switch-table" class="btn-action" style="background:#f39c12; color:#fff;">
+            <i class="fa fa-exchange-alt"></i> Switch Table
+          </button>
+
+          <button class="take-away-button" id="take-away-button" data-table-id="">
+            <i class="fa fa-user fa-2x"></i>
+            <span>Take Away</span>
+          </button>
+
       </div>
     </div>
     <!-- Order Items Table (scrollable) -->
@@ -866,6 +871,15 @@ border: none;
 
       <!-- Add this where you want the Mobile & Address row -->
       <div class="customer-info-row" id="customer-info-row">
+        <div class="form-group">
+          <label for="customer_name">Customer Name</label>
+          <input
+            type="text"
+            id="customer_name"
+            name="customer_name"
+            placeholder="Enter customer name"
+          />
+        </div>
         <div class="form-group">
           <label for="mobile_no">Mobile No</label>
           <input
@@ -1536,20 +1550,34 @@ searchInput.addEventListener('input', () => {
         });
 
           document.getElementById('menu-items-grid').addEventListener('click', e => {
-    const card = e.target.closest('.item-card, .deal-card');
-    if (!card) return;
-    const type = card.classList.contains('deal-card') ? 'deal' : 'menu';
-    const id   = parseInt(card.dataset[ type==='menu' ? 'itemId' : 'dealId' ], 10);
-    const price= parseFloat(card.dataset.price);
-    if (selectedTableId) {
-      // persist to server buffer
-      saveTableItem(selectedTableId, type, id, price, 1);
-    } else {
-      const name = card.querySelector('span').innerText;
-      // take-away or home-delivery mode: just in memory
-      addItemToOrder(type, id, name, price);
-    }
-  });
+          const card = e.target.closest('.item-card, .deal-card');
+          if (!card) return;
+          const type = card.classList.contains('deal-card') ? 'deal' : 'menu';
+          const id   = parseInt(card.dataset[ type==='menu' ? 'itemId' : 'dealId' ], 10);
+          const price= parseFloat(card.dataset.price);
+          const waiter = document.getElementById('waiter-select').value || "";
+
+          const mobileNo = document.getElementById("mobile_no").value || "";
+          const customerAddress = document.getElementById("customer_address").value || "";
+          const customerName = document.getElementById("customer_name").value || "";
+    
+          if (selectedTableId) {
+            if (waiter != ""){
+                // persist to server buffer
+                saveTableItem(selectedTableId, type, id, price, 1);
+            }else{
+                showAlert('error', 'Please select the waiter first, Thank You!');
+            }
+          } else {
+            if(mobileNo != "" && customerAddress != "" && customerName != ""){
+              const name = card.querySelector('span').innerText;
+              // take-away or home-delivery mode: just in memory
+              addItemToOrder(type, id, name, price);
+            }else{
+              showAlert('error', 'Please fill the customer details first, Thank You!');
+            }
+          }
+        });
 
       // 4) MenuItem or Deal click → add to order
       {% comment %} document.getElementById('menu-items-grid')
@@ -1751,10 +1779,10 @@ searchInput.addEventListener('input', () => {
 
       // 11) Paid button: create (if needed) and mark “paid” & print receipts
       document.querySelector('.btn-paid').addEventListener('click', () => {
-        if (selectedItems.length === 0) {
-        showAlert('error', 'You must add at least one item before closing the order.');
-        return;
-      }
+          if (selectedItems.length === 0) {
+            showAlert('error', 'You must add at least one item before closing the order.');
+            return;
+          }
 
         document.querySelector('.btn-paid').disabled  = true;
         document.querySelector('.btn-paid').innerHtml = '<i class="fa fa-spinner fa-spin"></i> Submiting Order';
@@ -1805,8 +1833,12 @@ searchInput.addEventListener('input', () => {
       showAlert('error', 'An unexpected error occurred.');
     })
     .finally(() => {
-      document.querySelector('.btn-paid').disabled = false;
-      document.querySelector('.btn-paid').innerHTML = '<i class="fa fa-money-bill"></i> Close / Paid';
+          document.querySelector('.btn-paid').disabled = false;
+          document.querySelector('.btn-paid').innerHTML = '<i class="fa fa-money-bill"></i> Close / Paid';
+          document.getElementById("mobile_no").value = "";
+          document.getElementById("customer_address").value = "";
+          document.getElementById("customer_name").value = "";
+          document.getElementById('waiter-select').selectedIndex = 0;
     });
   });
 
@@ -1901,6 +1933,7 @@ printTokenBtn.addEventListener('click', () => {
     
     const mobileNo = document.getElementById("mobile_no").value || "";
     const customerAddress = document.getElementById("customer_address").value || "";
+    const customerName = document.getElementById("customer_name").value || "";
     
     console.log("IS HOME DELIVERY: "+ isHomeDelivery);
     console.log("IS Food Panda: "+ source);
@@ -1924,6 +1957,7 @@ printTokenBtn.addEventListener('click', () => {
     base.isHomeDelivery = isHomeDelivery;
     base.mobileNo = mobileNo;
     base.customerAddress = customerAddress;
+    base.customerName = customerName
     return base;
   }
     // NOW compute the URL for ANY save operation (create/update):
@@ -1980,6 +2014,78 @@ document.getElementById('order-items-body')
       recalcTotals();
     }
   });
+
+
+document.getElementById('btn-switch-table').addEventListener('click', () => {
+  if (!selectedTableId) {
+    return alert('Please select a table first.');
+  }
+
+  // find all table buttons that are NOT active and not the current one
+  const available = Array.from(document.querySelectorAll('.table-btn'))
+    .map(btn => parseInt(btn.dataset.tableId, 10))
+    .filter(id =>
+      id !== selectedTableId &&
+      !document.querySelector(`.table-btn[data-table-id="${id}"]`).classList.contains('active')
+    );
+
+  if (available.length === 0) {
+    return alert('No other tables available to switch to.');
+  }
+
+  const choice = parseInt(
+    prompt(`Available tables: ${available.join(', ')}\nEnter table number:`),
+    10
+  );
+  if (!available.includes(choice)) {
+    return alert('Invalid table number.');
+  }
+
+  const oldTableId = selectedTableId;
+
+  fetch('/tables/switch/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrftoken,
+    },
+    body: JSON.stringify({
+      from_table: oldTableId,
+      to_table:   choice,
+    }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+
+      // 1) Clear old table button UI
+      const oldBtn = document.querySelector(`.table-btn[data-table-id="${oldTableId}"]`);
+      if (oldBtn) {
+        oldBtn.classList.remove('active');
+        const oldBadge = oldBtn.querySelector('.status');
+        if (oldBadge) oldBadge.remove();
+      }
+
+      // 2) If currently displayed as your “selectedTable”, clear the items list
+      if (oldTableId === parseInt(document.getElementById('table-heading').dataset.current)) {
+        document.getElementById('order-items-body').innerHTML = '';
+      }
+
+      // 3) Switch to the new table in state & UI
+      selectedTableId = data.new_table;
+      document.getElementById('table-heading').textContent = `Table ${choice}`;
+      document.getElementById('order-watermark').textContent = `Table ${choice}`;
+      document.getElementById('table-heading').dataset.current = choice;
+
+      // 4) Load its items (and its badge will be re‐rendered in recalcTotals)
+      loadTableItems(selectedTableId);
+      showAlert('success', `Switched to Table ${choice}`);
+    })
+    .catch(err => {
+      console.error(err);
+      alert(`Could not switch tables: ${err.message}`);
+    });
+});
 
     });
 

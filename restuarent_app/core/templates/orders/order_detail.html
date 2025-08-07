@@ -272,6 +272,9 @@
         {% elif order.isHomeDelivery == "no" %}Take Away
         {% else %}&ndash;{% endif %}
       </div>
+            <div><strong>Customer Name:</strong>
+        {% if order.customer_name %}{{ order.customer_name }}{% else %}&ndash;{% endif %}
+      </div>
       <div><strong>Customer Mobile:</strong>
         {% if order.mobile_no %}{{ order.mobile_no }}{% else %}&ndash;{% endif %}
       </div>
