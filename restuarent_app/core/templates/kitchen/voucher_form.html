@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% block title %}{{ object|default:'New' }} Kitchen Voucher{% endblock %}
+{% block extra_head %}
+<style>
+  .kv-grid .form-label{margin-bottom:.25rem;}
+  .items-table th,.items-table td{vertical-align: middle;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0"><i class="fa fa-receipt"></i> {{ object|default:'New' }} Kitchen Voucher</h5>
+    <a href="{% url 'kitchen_voucher_list' %}" class="btn btn-outline-secondary">Back</a>
+  </div>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    <div class="card">
+      <div class="card-body">
+        <div class="row g-3 kv-grid">
+          <div class="col-6 col-md-2">
+            <label class="form-label">Date</label>{{ form.date }}
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label">Type</label>{{ form.vtype }}
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label">Handler</label>{{ form.handler }}
+          </div>
+          <div class="col-12 col-md-4">
+            <label class="form-label">Notes</label>{{ form.notes }}
+          </div>
+        </div>
+        <hr>
+
+        {{ formset.management_form }}
+        <div class="table-responsive">
+          <table class="table items-table">
+            <thead class="table-light">
+              <tr>
+                <th style="width:45%">Raw Material</th>
+                <th style="width:25%">Quantity</th>
+                <th style="width:15%">Unit</th>
+                <th style="width:15%"></th>
+              </tr>
+            </thead>
+            <tbody id="itemRows">
+              {% for f in formset.forms %}
+              <tr class="item-row">
+                <td>{{ f.raw_material }}</td>
+                <td>{{ f.quantity }}</td>
+                <td class="text-muted align-middle">
+                  <span class="unit-cell"></span>
+                </td>
+                <td class="text-end">
+                  {% if f.instance.pk %}<label class="form-check form-switch mb-0">{{ f.DELETE }}<span class="ms-1 small">Delete</span></label>{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="d-flex justify-content-between">
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="addRow"><i class="fa fa-plus"></i> Add Row</button>
+          <button class="btn btn-primary"><i class="fa fa-save"></i> Save Voucher</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+(function(){
+  const addBtn = document.getElementById('addRow');
+  if(!addBtn) return;
+
+  const tbody = document.getElementById('itemRows');
+  // ✅ Correct management form IDs: id_<prefix>-TOTAL_FORMS / MAX_NUM_FORMS
+  const totalInput = document.getElementById('id_{{ formset.prefix }}-TOTAL_FORMS');
+  const maxInput   = document.getElementById('id_{{ formset.prefix }}-MAX_NUM_FORMS');
+
+  addBtn.addEventListener('click', function(){
+    if (!tbody || !totalInput) return;
+
+    const count = parseInt(totalInput.value || "0", 10);
+    const max   = maxInput ? parseInt(maxInput.value || "0", 10) : null;
+    if (max !== null && count >= max) return;
+
+    // Prefer last row as the cloning source; fallback to any .item-row
+    const src = tbody.querySelector('.item-row:last-of-type') || tbody.querySelector('.item-row');
+    if (!src) {
+      console.error('No template row (.item-row) found for formset.');
+      return;
+    }
+
+    const row = src.cloneNode(true);
+
+    // Remove any validation leftovers
+    row.querySelectorAll('.is-invalid, .invalid-feedback').forEach(n => n.remove());
+
+    // Reindex + clear
+    row.querySelectorAll('input, select, textarea').forEach(el => {
+      const name = el.getAttribute('name');
+      const id   = el.getAttribute('id');
+
+      // 🔁 Replace the middle index: -0- -> -<count>-
+      if (name) el.setAttribute('name', name.replace(/-(\d+)-/, `-${count}-`));
+      if (id)   el.setAttribute('id',   id.replace(/-(\d+)-/, `-${count}-`));
+
+      // Clear value sensibly
+      if (el.tagName === 'SELECT') {
+        el.selectedIndex = 0;
+      } else if (el.type === 'checkbox' || el.type === 'radio') {
+        el.checked = false;
+      } else {
+        el.value = '';
+      }
+    });
+
+    // Remove delete switch (only for existing rows)
+    const delSwitch = row.querySelector('input[name$="-DELETE"]')?.closest('.form-check');
+    if (delSwitch) delSwitch.remove();
+
+    tbody.appendChild(row);
+    totalInput.value = count + 1;
+
+    // Refresh unit label on the new row
+    updateUnitCell(row);
+  });
+
+  // Show unit next to each raw material (expects option text like "Tomato (kg)")
+  function updateUnitCell(scope){
+    (scope || document).querySelectorAll('#itemRows tr').forEach(tr=>{
+      const sel = tr.querySelector('select[name$="raw_material"]');
+      const unitCell = tr.querySelector('.unit-cell');
+      if (!sel || !unitCell) return;
+      const txt = sel.selectedOptions[0]?.text || '';
+      const m = txt.match(/\(([^)]+)\)$/);
+      unitCell.textContent = m ? m[1] : '';
+    });
+  }
+
+  document.getElementById('itemRows').addEventListener('change', e=>{
+    if (e.target.matches('select[name$="raw_material"]')) updateUnitCell();
+  });
+  updateUnitCell();
+})();
+</script>
+
+{% endblock %}

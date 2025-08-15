@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Bank Movement{% endblock %}
+{% block content %}
+<div class="container py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0"><i class="fa fa-exchange-alt"></i> Bank Cash Movement</h3>
+    <a class="btn btn-secondary" href="{% url 'bankmovement_list' %}"><i class="fa fa-arrow-left"></i> Back</a>
+  </div>
+
+  <form method="post" class="card shadow-sm">
+    {% csrf_token %}
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-12 col-md-4">
+          <label class="form-label">Date</label>
+          {{ form.date }}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Type</label>
+          {{ form.movement_type }}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Amount (₨)</label>
+          {{ form.amount }}
+        </div>
+
+        <div class="col-12 col-md-6 js-from-bank">
+          <label class="form-label">From Bank</label>
+          {{ form.from_bank }}
+        </div>
+        <div class="col-12 col-md-6 js-to-bank">
+          <label class="form-label">To Bank</label>
+          {{ form.to_bank }}
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label class="form-label">Method</label>
+          {{ form.method }}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Reference #</label>
+          {{ form.reference_no }}
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Notes</label>
+          {{ form.notes }}
+        </div>
+      </div>
+      <small class="text-muted d-block mt-2">
+        <strong>Deposit</strong> = Cash → Bank, <strong>Withdraw</strong> = Bank → Cash, <strong>Transfer</strong> = Bank A → Bank B
+      </small>
+    </div>
+    <div class="card-footer d-flex gap-2">
+      <button class="btn btn-primary" type="submit"><i class="fa fa-save"></i> Save</button>
+      <a class="btn btn-light" href="{% url 'bankmovement_list' %}">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+(function(){
+  const typeSel = document.getElementById("id_movement_type");
+  const fromWrap = document.querySelector(".js-from-bank");
+  const toWrap   = document.querySelector(".js-to-bank");
+
+  function refresh(){
+    const t = typeSel.value;
+    // default hide both
+    fromWrap.style.display = "none";
+    toWrap.style.display   = "none";
+
+    if (t === "deposit") {                // cash -> bank
+      toWrap.style.display = "";
+    } else if (t === "withdraw") {        // bank -> cash
+      fromWrap.style.display = "";
+    } else if (t === "transfer") {        // bank -> bank
+      fromWrap.style.display = "";
+      toWrap.style.display   = "";
+    } else if (t === "fee") {             // bank out
+      fromWrap.style.display = "";
+    } else if (t === "interest") {        // bank in
+      toWrap.style.display = "";
+    }
+  }
+  typeSel.addEventListener('change', refresh);
+  refresh();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block title %}Kitchen Stock Summary{% endblock %}
+{% block extra_head %}
+<style>
+  .table td,.table th{vertical-align:middle}
+  .smallmuted{font-size:.8rem;color:#6c757d}
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0"><i class="fa fa-warehouse"></i> Kitchen Stock Summary</h5>
+    <a href="{% url 'kitchen_voucher_list' %}" class="btn btn-outline-secondary">Vouchers</a>
+  </div>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Raw Material</th>
+            <th class="text-end">Purchased</th>
+            <th class="text-end text-danger">Issued</th>
+            <th class="text-end text-success">Returned</th>
+            <th class="text-end">Remaining (Store)</th>
+            <th class="text-end smallmuted">Actual current_stock</th>
+            <th class="text-end smallmuted">Δ</th>
+            <th style="width:120px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>{{ r.name }} <span class="smallmuted">({{ r.unit }})</span></td>
+            <td class="text-end">{{ r.purchased }}</td>
+            <td class="text-end text-danger">-{{ r.issued }}</td>
+            <td class="text-end text-success">+{{ r.returned }}</td>
+            <td class="text-end fw-semibold">{{ r.remaining }}</td>
+            <td class="text-end smallmuted">{{ r.current_stock }}</td>
+            <td class="text-end smallmuted">{{ r.current_stock|floatformat:2|add:""|default_if_none:"" |safe }}</td>
+            <td class="text-end">
+              <a href="{% url 'raw_material_ledger' r.id %}" class="btn btn-sm btn-outline-primary">Ledger</a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="8" class="text-center text-muted">No raw materials.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

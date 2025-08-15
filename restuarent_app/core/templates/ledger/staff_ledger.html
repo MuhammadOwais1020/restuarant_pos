@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block title %}Staff Ledger — {{ staff.full_name }}{% endblock %}
+{% block extra_head %}
+<style>
+  @media print {.no-print{display:none!important}.card{border:0} .table{font-size:12px}}
+  .badge-balance { padding:.35rem .6rem; }
+  .badge-balance.green { background:#e9f7ef; color:#1e7e34; }
+  .badge-balance.red { background:#fdecea; color:#b21f2d; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h4 class="mb-0"><i class="fa fa-book"></i> Staff Ledger — {{ staff.full_name }}</h4>
+    <a href="{% url 'ledger_home' %}" class="btn btn-outline-secondary no-print"><i class="fa fa-arrow-left"></i> Back</a>
+  </div>
+
+  {% include 'ledger/_filters.html' %}
+
+  <div class="card">
+    <div class="card-body p-2 p-lg-3">
+      <div class="row g-2 mb-2">
+        <div class="col-12 col-md-4"><strong>Monthly Salary:</strong> ₨ {{ staff.monthly_salary }}</div>
+        <div class="col-12 col-md-4"><strong>Salary Start:</strong> {{ accrual_start|date:"Y-m-d" }}</div>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="small text-muted">Opening Balance</div>
+        <div>₨ {{ opening }}</div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th style="width:170px">Date</th>
+              <th>Description</th>
+              <th class="text-end" style="width:140px">DR (Paid)</th>
+              <th class="text-end" style="width:140px">CR (Accrued)</th>
+              <th class="text-end" style="width:160px">Running Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in entries %}
+              <tr>
+                <td>{{ e.dt|date:"Y-m-d" }}</td>
+                <td>{{ e.desc }}</td>
+                <td class="text-end">{% if e.dr %}₨ {{ e.dr }}{% endif %}</td>
+                <td class="text-end">{% if e.cr %}₨ {{ e.cr }}{% endif %}</td>
+                <td class="text-end">
+                  <span class="badge badge-balance {% if e.bal > 0 %}red{% else %}green{% endif %}">
+                    ₨ {{ e.bal }}
+                  </span>
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="5" class="text-center text-muted">No entries in this period.</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="table-light">
+              <th colspan="4" class="text-end">Closing Balance</th>
+              <th class="text-end">
+                <span class="badge badge-balance {% if closing > 0 %}red{% else %}green{% endif %}">
+                  ₨ {{ closing }}
+                </span>
+              </th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="text-muted small">
+        <strong>Legend:</strong> Positive (red) = we owe the staff member. Negative (green) = advance paid / they owe us.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

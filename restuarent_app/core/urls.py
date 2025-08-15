@@ -33,7 +33,6 @@ urlpatterns = [
         RedirectView.as_view(pattern_name="login", permanent=False),
         name="home",
     ),
-    path("admin/", admin.site.urls),
     path("login/", LoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
@@ -192,4 +191,89 @@ urlpatterns += [
     path('tables/<int:table_id>/print-token/', TablePrintTokenView.as_view(), name='print_token'),
     path('orders/<int:pk>/reprint/', OrderReprintView.as_view(), name='order_reprint'),
     path('tables/switch/', TableSessionSwitchView.as_view(), name='table_session_switch'),
+]
+
+from .bank_account import (
+    BankAccountListView, BankAccountCreateView, BankAccountUpdateView, BankAccountDeleteView,
+    BankMovementListView, BankMovementCreateView, BankMovementUpdateView, BankMovementDeleteView,
+)
+
+urlpatterns += [
+    # Bank Accounts
+    path('bank-accounts/', BankAccountListView.as_view(), name='bankaccount_list'),
+    path('bank-accounts/create/', BankAccountCreateView.as_view(), name='bankaccount_create'),
+    path('bank-accounts/<int:pk>/edit/', BankAccountUpdateView.as_view(), name='bankaccount_update'),
+    path('bank-accounts/<int:pk>/delete/', BankAccountDeleteView.as_view(), name='bankaccount_delete'),
+
+    # Bank Movements
+    path('bank-movements/', BankMovementListView.as_view(), name='bankmovement_list'),
+    path('bank-movements/create/', BankMovementCreateView.as_view(), name='bankmovement_create'),
+    path('bank-movements/<int:pk>/edit/', BankMovementUpdateView.as_view(), name='bankmovement_update'),
+    path('bank-movements/<int:pk>/delete/', BankMovementDeleteView.as_view(), name='bankmovement_delete'),
+]
+
+# urls.py
+from .staff_management import *
+
+urlpatterns += [
+    path('staff/', StaffListView.as_view(), name='staff_list'),
+    path('staff/create/', StaffCreateView.as_view(), name='staff_create'),
+    path('staff/<int:pk>/edit/', StaffUpdateView.as_view(), name='staff_edit'),
+    path('staff/<int:pk>/delete/', StaffDeleteView.as_view(), name='staff_delete'),
+]
+
+
+# core/urls.py (or project's urls.py where others are included)
+from django.urls import path
+from .expenses import (
+    ExpenseListView, ExpenseCreateView, ExpenseUpdateView, ExpenseDeleteView
+)
+
+urlpatterns += [
+    path('expenses/', ExpenseListView.as_view(), name='expense_list'),
+    path('expenses/create/', ExpenseCreateView.as_view(), name='expense_create'),
+    path('expenses/<int:pk>/edit/', ExpenseUpdateView.as_view(), name='expense_update'),
+    path('expenses/<int:pk>/delete/', ExpenseDeleteView.as_view(), name='expense_delete'),
+]
+
+
+from .views import supplier_balance_json
+
+urlpatterns += [
+    path('api/supplier-balance/', supplier_balance_json, name='supplier_balance_json'),
+]
+
+
+# core/urls.py
+from django.urls import path
+from .ledger import (
+    LedgerHomeView,
+    SupplierLedgerView,
+    StaffLedgerView,
+    RawMaterialLedgerView
+)
+
+urlpatterns += [
+    path('ledger/', LedgerHomeView.as_view(), name='ledger_home'),
+    path('ledger/supplier/<int:pk>/', SupplierLedgerView.as_view(), name='ledger_supplier'),
+    path('ledger/staff/<int:pk>/', StaffLedgerView.as_view(), name='ledger_staff'),
+]
+
+from core.kitchen import (
+    KitchenVoucherListView, KitchenVoucherCreateView, KitchenVoucherUpdateView, KitchenVoucherDeleteView,
+    KitchenStockSummaryView
+)
+
+urlpatterns += [
+    path('kitchen/vouchers/', KitchenVoucherListView.as_view(), name='kitchen_voucher_list'),
+    path('kitchen/vouchers/new/', KitchenVoucherCreateView.as_view(), name='kitchen_voucher_create'),
+    path('kitchen/vouchers/<int:pk>/edit/', KitchenVoucherUpdateView.as_view(), name='kitchen_voucher_update'),
+    path('kitchen/vouchers/<int:pk>/delete/', KitchenVoucherDeleteView.as_view(), name='kitchen_voucher_delete'),
+
+    path('kitchen/stock/', KitchenStockSummaryView.as_view(), name='kitchen_stock_summary'),
+]
+
+
+urlpatterns += [
+    path('ledger/raw-material/<int:pk>/', RawMaterialLedgerView.as_view(), name='raw_material_ledger'),
 ]

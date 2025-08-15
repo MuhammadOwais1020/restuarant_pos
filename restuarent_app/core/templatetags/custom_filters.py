@@ -41,3 +41,11 @@ def mul(value, arg):
         return float(value) * float(arg)
     except ValueError:
         return 0
+
+
+from django import template
+register = template.Library()
+
+@register.filter
+def add_class(field, css):
+    return field.as_widget(attrs={**field.field.widget.attrs, 'class': css})

@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-4">
+  <h2>Staff Management</h2>
+  <a href="{% url 'staff_create' %}" class="btn btn-success mb-3">Add New Staff</a>
+  <table class="table table-bordered table-striped">
+    <thead>
+      <tr>
+        <th>Name</th><th>Role</th><th>Phone</th><th>Access</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for staff in staff_list %}
+      <tr>
+        <td>{{ staff.full_name }}</td>
+        <td>{{ staff.role }}</td>
+        <td>{{ staff.phone }}</td>
+        <td>
+          {% if staff.has_software_access %} ✔️ {% else %} ❌ {% endif %}
+        </td>
+        <td>
+          <a href="{% url 'staff_edit' staff.pk %}" class="btn btn-sm btn-primary">Edit</a>
+          <a href="{% url 'staff_delete' staff.pk %}" class="btn btn-sm btn-danger">Delete</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

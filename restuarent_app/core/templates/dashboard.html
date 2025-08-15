@@ -125,6 +125,30 @@
   <h3>Recipes</h3>
 </a>
 
+<!-- Kitchen Vouchers (list) -->
+<a href="{% url 'kitchen_voucher_list' %}" class="card">
+  <i class="fa fa-box-open fa-3x"></i>
+  <h3>Kitchen Vouchers</h3>
+</a>
+
+<!-- Issue to Kitchen (new voucher preselected as Issue) -->
+<a href="{% url 'kitchen_voucher_create' %}?type=issue" class="card">
+  <i class="fa fa-arrow-up-right-from-square fa-3x"></i>
+  <h3>Issue to Kitchen</h3>
+</a>
+
+<!-- Return from Kitchen (new voucher preselected as Return) -->
+<a href="{% url 'kitchen_voucher_create' %}?type=return" class="card">
+  <i class="fa fa-arrow-down-left-from-square fa-3x"></i>
+  <h3>Return from Kitchen</h3>
+</a>
+
+<!-- Kitchen Stock Summary (purchased/issued/returned/remaining) -->
+<a href="{% url 'kitchen_stock_summary' %}" class="card">
+  <i class="fa fa-warehouse fa-3x"></i>
+  <h3>Kitchen Stock</h3>
+</a>
+
 <a href="{% url 'cost_report' %}" class="card">
   <i class="fa fa-calculator fa-3x"></i>
   <h3>Cost Report</h3>
@@ -135,6 +159,30 @@
   <h3>Cost Detail</h3>
 </a>
 
+<a href="{% url 'bankaccount_list' %}" class="card">
+  <i class="fa fa-university fa-3x"></i>
+  <h3>Bank Accounts</h3>
+</a>
+
+<a href="{% url 'bankmovement_list' %}" class="card">
+  <i class="fa fa-right-left fa-3x"></i>
+  <h3>Bank Cash Movements</h3>
+</a>
+
+<a href="{% url 'staff_list' %}" class="card">
+  <i class="fa fa-users-cog fa-3x"></i>
+  <h3>Staff Management</h3>
+</a>
+<!-- Expenses -->
+<a href="{% url 'expense_list' %}" class="card">
+  <i class="fa fa-money-bill-wave fa-3x"></i>
+  <h3>Expenses</h3>
+</a>
+
+<a href="{% url 'ledger_home' %}" class="card">
+  <i class="fa fa-book fa-3x"></i>
+  <h3>Ledger (Khata)</h3>
+</a>
 
 </main>
 </section>

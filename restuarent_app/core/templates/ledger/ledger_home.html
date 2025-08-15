@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% block title %}Ledger (Khata){% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Fill vertical space nicely and keep headers visible while scrolling */
+  .ledger-card{height:calc(100vh - 180px); display:flex; flex-direction:column;}
+  .ledger-card div{width:100%}
+  .ledger-card .card-header{position:sticky; top:0; z-index:2; background:#fff;}
+  .ledger-search{position:sticky; top:56px; z-index:1; background:#fff; padding:.5rem 1rem .75rem;border-bottom:1px solid #eef0f3;}
+  .ledger-list{overflow:auto; /* takes remaining height */ }
+  .ledger-list .list-group-item{padding:.55rem .9rem;}
+  .ledger-list .list-group-item .name{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:70%;}
+  @media (max-width: 576px){
+    .ledger-card{height:auto;}
+    .ledger-list{max-height:50vh;}
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="fa fa-book"></i> Ledger (Khata)</h4>
+  </div>
+
+  <div class="row g-3">
+    <!-- Suppliers -->
+    <div class="col-12 col-lg-6">
+      <div class="card ledger-card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div class="fw-semibold">
+            Suppliers
+            <span class="badge bg-light text-secondary border ms-1">{{ suppliers|length }}</span>
+          </div>
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'supplier_list' %}">
+            <i class="fa fa-cog"></i> Manage
+          </a>
+        </div>
+
+        <div class="ledger-search">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text"><i class="fa fa-search"></i></span>
+            <input id="supplierSearch" type="search" class="form-control" placeholder="Search suppliers…">
+          </div>
+        </div>
+
+        <div id="suppliersList" class="list-group list-group-flush ledger-list">
+          {% for s in suppliers %}
+            <a href="{% url 'ledger_supplier' s.id %}"
+               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+               data-label="{{ s.name|lower }}">
+              <span class="name">{{ s.name }}</span>
+              <i class="fa fa-arrow-right small text-muted"></i>
+            </a>
+          {% empty %}
+            <div class="list-group-item text-muted">No suppliers.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Staff -->
+    <div class="col-12 col-lg-6">
+      <div class="card ledger-card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div class="fw-semibold">
+            Staff
+            <span class="badge bg-light text-secondary border ms-1">{{ staff|length }}</span>
+          </div>
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'staff_list' %}">
+            <i class="fa fa-cog"></i> Manage
+          </a>
+        </div>
+
+        <div class="ledger-search">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text"><i class="fa fa-search"></i></span>
+            <input id="staffSearch" type="search" class="form-control" placeholder="Search staff…">
+          </div>
+        </div>
+
+        <div id="staffList" class="list-group list-group-flush ledger-list">
+          {% for st in staff %}
+            <a href="{% url 'ledger_staff' st.id %}"
+               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+               data-label="{{ st.full_name|lower }}">
+              <span class="name">{{ st.full_name }}</span>
+              <i class="fa fa-arrow-right small text-muted"></i>
+            </a>
+          {% empty %}
+            <div class="list-group-item text-muted">No staff.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Tiny client-side filter for both lists
+  function hookFilter(inputId, listId){
+    const input = document.getElementById(inputId);
+    const list  = document.getElementById(listId);
+    if(!input || !list) return;
+    input.addEventListener('input', function(){
+      const q = this.value.trim().toLowerCase();
+      list.querySelectorAll('.list-group-item').forEach(el=>{
+        const ok = !q || (el.dataset.label||'').includes(q);
+        el.style.display = ok ? '' : 'none';
+      });
+    });
+  }
+  hookFilter('supplierSearch', 'suppliersList');
+  hookFilter('staffSearch', 'staffList');
+</script>
+{% endblock %}

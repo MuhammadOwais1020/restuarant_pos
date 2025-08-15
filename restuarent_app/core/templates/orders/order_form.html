@@ -798,7 +798,7 @@ border: none;
           <input id="tax-perc" type="number" min="0" step="0.01" value="{% if order %}{{ order.tax_percentage }}{% else %}0{% endif %}" />
         </div>
         <div class="totals-items">
-          <span>Service Charge:</span>
+          <span id="shipping-or-service">Service Charges:</span>
           <input id="service-charge" type="number" min="0" step="0.01" value="{% if order %}{{ order.service_charge }}{% else %}0{% endif %}" />
         </div>
       </div>
@@ -845,7 +845,7 @@ border: none;
     <div class="right-bottom-actions">
       <div class="waiter-selector" style="padding:10px; background:#fff; border-bottom:1px solid #e0e0e0;">
       <div>
-        <label for="waiter-select"><strong>Waiter:</strong></label>
+        <label for="waiter-select"><strong id="waiter-or-rider">Waiter:</strong></label>
       <select id="waiter-select" style="margin-left:.5rem; padding:.25rem;">
         <option value="">— Unassigned —</option>
       </select>
@@ -854,6 +854,9 @@ border: none;
           <label for="payment_method">Payment Method</label>
           <select class="form-control" id="payment_method" name="payment_method">
             <option value="cash">Cash</option>
+            <option value="jazz cash">Jazz Cash</option>
+            <option value="easypaisa">Easypaisa</option>
+            <option value="bank">Bank</option>
             <option value="card">Card</option>
           </select>
         </div>
@@ -1025,6 +1028,8 @@ border: none;
       document.getElementById('order-watermark').textContent = "Take Away";
       document.getElementById('table-heading').textContent = "Take Away Customer";
       takeAwayButton.classList.add('active-class');
+      document.getElementById('waiter-or-rider').textContent = "Waiter";
+      document.getElementById('shipping-or-service').textContent = "Service Charges";
 
       // 1) Clear any previous “table” selection
   selectedTableId = null;
@@ -1036,6 +1041,7 @@ border: none;
   selectedItems = [];
   takeAwayButton.addEventListener = "Take Away Customer";
   document.getElementById("customer-info-row").style.display="flex";
+  document.getElementById('waiter-select').selectedIndex = 0;
   // 5) Re-render the table
   renderOrderItemsTable();
     });
@@ -1850,6 +1856,9 @@ searchInput.addEventListener('input', () => {
       refreshWatermark(selectedTableId);
       loadTableItems(selectedTableId);
       document.getElementById("customer-info-row").style.display = "none";
+      document.getElementById('waiter-or-rider').textContent = "Waiter";
+      document.getElementById('shipping-or-service').textContent = "Service Charges";
+      homeDelivery.checked = false;
       fetch(`/tables/${selectedTableId}/session/`)
       .then(r => r.json())
       .then(sess => {
@@ -1914,11 +1923,18 @@ printTokenBtn.addEventListener('click', () => {
     label = 'Home Delivery';
     document.getElementById('table-heading').textContent = "Home Delivery";
     document.getElementById("customer-info-row").style.display = "flex";
+    document.getElementById('waiter-select').selectedIndex = 0;
+    document.getElementById('waiter-or-rider').textContent = "Rider";
+    document.getElementById('shipping-or-service').textContent = "Delivery Charges";
+    takeAwayButton.classList.remove('active-class');
   }
   else if(text == "no"){
     label = ""
     document.getElementById('table-heading').textContent = "";
     document.getElementById("customer-info-row").style.display = "none";
+    document.getElementById('waiter-select').selectedIndex = 0;
+    document.getElementById('waiter-or-rider').textContent = "Waiter";
+    document.getElementById('shipping-or-service').textContent = "Service Charges";
   } else if (text == "takeaway") {
     label = 'Take Away';
   } else {

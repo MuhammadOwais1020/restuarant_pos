@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}{% if form.instance.pk %}Edit{% else %}Add{% endif %} Expense{% endblock %}
+{% block content %}
+<div class="container mt-4">
+  <h3 class="mb-3">{% if form.instance.pk %}Edit{% else %}Add{% endif %} Expense</h3>
+
+  <form method="post" enctype="multipart/form-data" class="needs-validation" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="row g-3">
+      <div class="col-12 col-md-3">
+        <label class="form-label">Date</label>
+        {{ form.date }}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">Category</label>
+        {{ form.category }}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">Amount (₨)</label>
+        {{ form.amount }}
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">Reference</label>
+        {{ form.reference }}
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">Description</label>
+        {{ form.description }}
+      </div>
+
+      <div class="col-12 col-md-4 supplier-group">
+        <label class="form-label">Supplier</label>
+        {{ form.supplier }}
+        <div class="form-text">Required for bills and purchases.</div>
+      </div>
+
+      <div class="col-12 col-md-4 staff-group">
+        <label class="form-label">Staff (for Salary)</label>
+        {{ form.staff }}
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label">Attachment (optional)</label>
+        {{ form.attachment }}
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label">Payment Source</label>
+        {{ form.payment_source }}
+      </div>
+
+      <div class="col-12 col-md-4 bank-group">
+        <label class="form-label">Bank Account</label>
+        {{ form.bank_account }}
+      </div>
+    </div>
+
+    <div class="d-flex gap-2 mt-4">
+      <button class="btn btn-primary" type="submit"><i class="fa fa-save"></i> Save</button>
+      <a class="btn btn-outline-secondary" href="{% url 'expense_list' %}">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const category = document.getElementById('id_category');
+    const source = document.getElementById('id_payment_source');
+    const supplierGroup = document.querySelector('.supplier-group');
+    const staffGroup = document.querySelector('.staff-group');
+    const bankGroup = document.querySelector('.bank-group');
+    const supplierSelect = document.getElementById('id_supplier');
+    const staffSelect = document.getElementById('id_staff');
+    const bankSelect = document.getElementById('id_bank_account');
+
+    function toggleByCategory() {
+      const cat = category.value;
+      const supplierCats = new Set(['electricity','gas','purchase','stationery','maintenance','software']);
+      // Supplier
+      if (supplierCats.has(cat)) {
+        supplierGroup.style.display = '';
+      } else {
+        supplierGroup.style.display = 'none';
+        if (supplierSelect) supplierSelect.value = '';
+      }
+      // Staff for salary
+      if (cat === 'salary') {
+        staffGroup.style.display = '';
+      } else {
+        staffGroup.style.display = 'none';
+        if (staffSelect) staffSelect.value = '';
+      }
+    }
+
+    function toggleBySource() {
+      const val = source.value;
+      if (val === 'bank') {
+        bankGroup.style.display = '';
+      } else {
+        bankGroup.style.display = 'none';
+        if (bankSelect) bankSelect.value = '';
+      }
+    }
+
+    toggleByCategory();
+    toggleBySource();
+    category.addEventListener('change', toggleByCategory);
+    source.addEventListener('change', toggleBySource);
+  });
+</script>
+{% endblock %}

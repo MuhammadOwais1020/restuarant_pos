@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block title %}{{ rm.name }} — Kitchen Ledger{% endblock %}
+{% block extra_head %}
+<style>
+  @media print {.no-print{display:none!important}.card{border:0}.table{font-size:12px}}
+  .badge-balance{padding:.35rem .6rem}
+  .badge-balance.green{background:#e9f7ef;color:#1e7e34}
+  .badge-balance.red{background:#fdecea;color:#b21f2d}
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0"><i class="fa fa-book"></i> {{ rm.name }} <span class="text-muted">({{ rm.unit }})</span></h5>
+    <a href="{% url 'kitchen_stock_summary' %}" class="btn btn-outline-secondary no-print">Back</a>
+  </div>
+
+  {% include 'ledger/_filters.html' %}
+
+  <div class="card">
+    <div class="card-body p-2 p-lg-3">
+
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="small text-muted">Opening Balance</div>
+        <div>{{ opening }}</div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-bordered table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th style="width:170px">Date/Time</th>
+              <th>Description</th>
+              <th class="text-end" style="width:140px">IN</th>
+              <th class="text-end" style="width:140px">OUT</th>
+              <th class="text-end" style="width:160px">Running Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for e in entries %}
+            <tr>
+              <td>{{ e.dt|date:"Y-m-d H:i" }}</td>
+              <td>{{ e.desc }}</td>
+              <td class="text-end">{% if e.in %}{{ e.in }}{% endif %}</td>
+              <td class="text-end">{% if e.out %}{{ e.out }}{% endif %}</td>
+              <td class="text-end">
+                <span class="badge badge-balance {% if e.bal >= 0 %}green{% else %}red{% endif %}">{{ e.bal }}</span>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-center text-muted">No entries in this period.</td></tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="table-light">
+              <th colspan="4" class="text-end">Closing Balance</th>
+              <th class="text-end">
+                <span class="badge badge-balance {% if closing >= 0 %}green{% else %}red{% endif %}">{{ closing }}</span>
+              </th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="text-muted small">
+        <strong>Legend:</strong> IN = purchases & returns from kitchen. OUT = issues to kitchen. Report ignores recipe consumption.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

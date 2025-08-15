@@ -34,3 +34,10 @@ class CashFlowAdmin(admin.ModelAdmin):
 @admin.register(BankAccount)
 class BankAccountAdmin(admin.ModelAdmin):
     list_display = ('name','account_number')
+
+# admin.py
+from .models import Staff, Role
+
+admin.site.register(Staff)
+admin.site.register(Role)
+

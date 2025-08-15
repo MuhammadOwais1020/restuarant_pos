@@ -264,7 +264,11 @@
       <div><strong>Status:</strong> {{ order.get_status_display }}</div>
       <div><strong>Token #:</strong> {{ order.token_number }}</div>
       <div><strong>Created:</strong> {{ order.created_at|date:"Y-m-d H:i" }}</div>
-      <div><strong>Waiter:</strong>
+      <div><strong>
+        {% if order.isHomeDelivery == "yes" %}Rider
+        {% elif order.isHomeDelivery == "no" %}Waiter
+        {% else %}&ndash;{% endif %}
+      </strong>
         {% if order.waiter %}{{ order.waiter.name }}{% else %}&ndash;{% endif %}
       </div>
       <div><strong>Mode:</strong>
@@ -280,6 +284,13 @@
       </div>
        <div><strong>Customer Address:</strong>
         {% if order.customer_address %}{{ order.customer_address }}{% else %}&ndash;{% endif %}
+      </div>
+
+       <div><strong>Payment Method:</strong>
+        {% if order.payment %}{{ order.payment.method }}{% else %}&ndash;{% endif %}
+      </div>
+       <div><strong>Notes:</strong>
+        {% if order.payment %}{{ order.payment.details }}{% else %}&ndash;{% endif %}
       </div>
     </div>
 
@@ -315,7 +326,11 @@
   <tr><th>Discount:</th>      <td>{{ order.discount|floatformat:2 }}</td></tr>
   <tr><th>Tax ({{ order.tax_percentage }}%):</th>
       <td>{{ tax_amount|floatformat:2 }}</td></tr>
-  <tr><th>Service Charge:</th><td>{{ order.service_charge|floatformat:2 }}</td></tr>
+  <tr><th>
+          {% if order.isHomeDelivery == "yes" %}Delievry Charges:
+        {% elif order.isHomeDelivery == "no" %}Service Charges:
+        {% else %}&ndash;{% endif %}
+  </th><td>{{ order.service_charge|floatformat:2 }}</td></tr>
   <tr class="font-weight-bold">
     <th>Grand Total:</th>     <td>{{ grand_total|floatformat:2 }}</td>
   </tr>

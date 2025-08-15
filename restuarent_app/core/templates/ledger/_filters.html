@@ -1,0 +1,20 @@
+<form method="get" class="row g-2 align-items-end mb-3 no-print">
+  <div class="col-12 col-sm-4 col-lg-3">
+    <label class="form-label">From</label>
+    <input type="date" name="from" value="{{ from|date:'Y-m-d' }}" class="form-control">
+  </div>
+  <div class="col-12 col-sm-4 col-lg-3">
+    <label class="form-label">To</label>
+    <input type="date" name="to" value="{{ to|date:'Y-m-d' }}" class="form-control">
+  </div>
+  <div class="col-12 col-sm-4 col-lg-3">
+    <div class="form-check mt-4">
+      <input class="form-check-input" type="checkbox" name="from_start" id="fromstart" {% if from_start %}checked{% endif %}>
+      <label for="fromstart" class="form-check-label">From Start (Opening = 0)</label>
+    </div>
+  </div>
+  <div class="col-12 col-lg-3 d-flex gap-2">
+    <button class="btn btn-primary w-100"><i class="fa fa-filter"></i> Apply</button>
+    <button type="button" class="btn btn-outline-secondary w-100" onclick="window.print()"><i class="fa fa-print"></i> Print</button>
+  </div>
+</form>

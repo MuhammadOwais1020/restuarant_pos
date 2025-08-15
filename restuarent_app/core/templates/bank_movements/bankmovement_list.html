@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Cash Movements{% endblock %}
+{% block content %}
+<div class="container py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0"><i class="fa fa-exchange-alt"></i> Bank Cash Movements</h3>
+    <a class="btn btn-primary" href="{% url 'bankmovement_create' %}">
+      <i class="fa fa-plus"></i> New Movement
+    </a>
+  </div>
+
+  <form method="get" class="row g-2 mb-3">
+    <div class="col-12 col-md-5 col-lg-4">
+      <select name="account" class="form-select">
+        <option value="">All Accounts</option>
+        {% for a in accounts %}
+          <option value="{{ a.id }}" {% if request.GET.account == a.id|stringformat:'s' %}selected{% endif %}>
+            {{ a.bank_name }} — {{ a.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-5 col-lg-3">
+      <select name="type" class="form-select">
+        <option value="">All Types</option>
+        {% for key,label in types %}
+          <option value="{{ key }}" {% if request.GET.type == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-2 col-lg-2">
+      <button class="btn btn-outline-secondary w-100"><i class="fa fa-filter"></i> Filter</button>
+    </div>
+  </form>
+
+  <div class="card shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-striped mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th class="text-end">Amount (₨)</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Method</th>
+            <th>Ref</th>
+            <th>Notes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in movements %}
+          <tr>
+            <td>{{ m.date }}</td>
+            <td>{{ m.get_movement_type_display }}</td>
+            <td class="text-end">{{ m.amount|floatformat:2 }}</td>
+            <td>{{ m.from_bank|default:"Cash" }}</td>
+            <td>{{ m.to_bank|default:"Cash" }}</td>
+            <td>{{ m.method }}</td>
+            <td>{{ m.reference_no }}</td>
+            <td>{{ m.notes }}</td>
+            <td class="text-nowrap">
+              <a href="{% url 'bankmovement_update' m.pk %}" class="btn btn-sm btn-outline-primary"><i class="fa fa-edit"></i></a>
+              <a href="{% url 'bankmovement_delete' m.pk %}" class="btn btn-sm btn-outline-danger"><i class="fa fa-trash"></i></a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="9" class="text-center py-4">No movements yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if is_paginated %}
+    <div class="card-footer d-flex justify-content-between">
+      <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      <div>
+        {% if page_obj.has_previous %}
+          <a class="btn btn-sm btn-light" href="?page={{ page_obj.previous_page_number }}">« Prev</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a class="btn btn-sm btn-light" href="?page={{ page_obj.next_page_number }}">Next »</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -431,7 +431,7 @@
       <th>Payment</th>
       <th>Created At</th>
       <th>Token #</th>
-      <th>Subtotal</th>
+      <th>Waiter/Rider</th>
       <th>Total Amt</th>
       <th>Details</th> 
       <th>Reprint</th>
@@ -467,14 +467,18 @@
       <td>{{ order.token_number }}</td>
 
       {# Display the annotated subtotal (or 0.00 if none) #}
-      <td>
+      {% comment %} <td>
         {% if order.subtotal %}
           {{ order.subtotal|floatformat:2 }}
         {% else %}
           0.00
         {% endif %}
+      </td> {% endcomment %}
+      <td>
+        {% if order.waiter%}
+        {{order.waiter.name}}
+        {% endif %}
       </td>
-
       {# Display the annotated total_amount (or 0.00 if none) #}
       <td>
         {% if order.total_amount %}
@@ -548,6 +552,9 @@
           <label for="payment_method">Payment Method</label>
           <select class="form-control" id="payment_method" name="payment_method">
             <option value="cash">Cash</option>
+            <option value="jazz cash">Jazz Cash</option>
+            <option value="easypaisa">Easypaisa</option>
+            <option value="bank">Bank</option>
             <option value="card">Card</option>
           </select>
         </div>
@@ -557,7 +564,7 @@
         </div>
         <div class="form-group">
           <label for="details">Notes</label>
-          <input type="text" class="form-control" id="details" name="details" readonly>
+          <input type="text" class="form-control" id="details" name="details">
         </div>
         <div class="form-group text-center">
           <button type="submit" class="btn-submit-payment">Submit Payment</button>

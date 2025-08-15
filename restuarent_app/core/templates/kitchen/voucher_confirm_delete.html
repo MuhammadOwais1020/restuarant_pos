@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block title %}Delete Kitchen Voucher{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="card">
+    <div class="card-body">
+      <h5 class="mb-3">Delete voucher {{ object }}?</h5>
+      <form method="post">{% csrf_token %}
+        <a href="{% url 'kitchen_voucher_list' %}" class="btn btn-outline-secondary">Cancel</a>
+        <button class="btn btn-danger">Delete</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

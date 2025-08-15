@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% block title %}Kitchen Vouchers{% endblock %}
+{% block extra_head %}
+<style>
+  .toolbar{gap:.5rem}
+  .table td,.table th{vertical-align: middle;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0"><i class="fa fa-box-open"></i> Kitchen Issue / Return</h5>
+    <div class="toolbar d-flex">
+      <a href="{% url 'kitchen_voucher_create' %}" class="btn btn-primary"><i class="fa fa-plus"></i> New Voucher</a>
+      <a href="{% url 'kitchen_stock_summary' %}" class="btn btn-outline-secondary">Stock Summary</a>
+    </div>
+  </div>
+
+  <form method="get" class="row g-2 align-items-end mb-2">
+    <div class="col-6 col-md-2">
+      <label class="form-label small">Type</label>
+      <select name="type" class="form-select form-select-sm">
+        <option value="">All</option>
+        <option value="issue"  {% if request.GET.type == 'issue' %}selected{% endif %}>Issue</option>
+        <option value="return" {% if request.GET.type == 'return' %}selected{% endif %}>Return</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small">Search</label>
+      <input name="q" value="{{ request.GET.q }}" class="form-control form-control-sm" placeholder="Notes / handler">
+    </div>
+    <div class="col-12 col-md-2">
+      <button class="btn btn-sm btn-primary w-100"><i class="fa fa-filter"></i> Filter</button>
+    </div>
+  </form>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="width:120px">Date</th>
+            <th>Type</th>
+            <th>Handler</th>
+            <th>Items</th>
+            <th>Notes</th>
+            <th style="width:160px" class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in vouchers %}
+          <tr>
+            <td>{{ v.date|date:"Y-m-d" }}</td>
+            <td>
+              {% if v.vtype == 'issue' %}
+                <span class="badge bg-danger-subtle text-danger border">Issue</span>
+              {% else %}
+                <span class="badge bg-success-subtle text-success border">Return</span>
+              {% endif %}
+            </td>
+            <td>{{ v.handler }}</td>
+            <td>
+              {% for it in v.items.all %}
+                <div class="small text-muted">{{ it.raw_material.name }} — {{ it.quantity }} {{ it.raw_material.unit }}</div>
+              {% empty %}<span class="text-muted">—</span>{% endfor %}
+            </td>
+            <td class="text-muted small">{{ v.notes }}</td>
+            <td class="text-end">
+              <a href="{% url 'kitchen_voucher_update' v.id %}" class="btn btn-sm btn-outline-primary"><i class="fa fa-pen"></i></a>
+              <a href="{% url 'kitchen_voucher_delete' v.id %}" class="btn btn-sm btn-outline-danger"><i class="fa fa-trash"></i></a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="text-center text-muted">No vouchers.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

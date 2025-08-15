@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block title %}Bank Account{% endblock %}
+{% block content %}
+<div class="container py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0"><i class="fa fa-university"></i> Bank Account</h3>
+    <a class="btn btn-secondary" href="{% url 'bankaccount_list' %}"><i class="fa fa-arrow-left"></i> Back</a>
+  </div>
+
+  <form method="post" class="card shadow-sm">
+    {% csrf_token %}
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Account Name</label>
+          {{ form.name }}
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Bank</label>
+          {{ form.bank_name }}
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Account #</label>
+          {{ form.account_number }}
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Branch</label>
+          {{ form.branch }}
+        </div>
+        <div class="col-12 col-md-6 col-lg-4">
+          <label class="form-label">Opening Balance</label>
+          {{ form.opening_balance }}
+        </div>
+        <div class="col-12 col-md-3 col-lg-2 d-flex align-items-center">
+          <div class="form-check mt-4">
+            {{ form.is_active }} <label class="form-check-label">Active</label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-footer d-flex gap-2">
+      <button class="btn btn-primary" type="submit"><i class="fa fa-save"></i> Save</button>
+      <a class="btn btn-light" href="{% url 'bankaccount_list' %}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

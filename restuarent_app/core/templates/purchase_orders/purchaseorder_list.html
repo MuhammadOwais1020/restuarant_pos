@@ -1,54 +1,53 @@
 {% extends 'base.html' %}
+{% block title %}Purchase Orders{% endblock %}
 {% block content %}
-<div class="page-header">
-  <h1><i class="fa fa-box"></i> Purchase Orders</h1>
-  <a href="{% url 'purchase_order_create' %}" class="btn">
-    <i class="fa fa-plus"></i> New Order
-  </a>
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="fa fa-box"></i> Purchase Orders</h4>
+    <a href="{% url 'purchase_order_create' %}" class="btn btn-primary"><i class="fa fa-plus"></i> New Order</a>
+  </div>
+
+  <form class="row g-2 mb-3">
+    <div class="col-12 col-md-4">
+      <input name="q" class="form-control" placeholder="Search suppliers..." value="{{ request.GET.q|default:'' }}">
+    </div>
+    <div class="col-12 col-md-2 d-grid">
+      <button class="btn btn-outline-secondary"><i class="fa fa-search"></i> Filter</button>
+    </div>
+  </form>
+
+  <div class="table-responsive">
+    <table class="table table-bordered table-striped align-middle">
+      <thead class="table-light">
+        <tr>
+          <th>#</th><th>Supplier</th><th>Date</th><th>Status</th>
+          <th class="text-end">Subtotal</th>
+          <th class="text-end">Net Total</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in orders %}
+        <tr>
+          <td>{{ o.id }}</td>
+          <td>{{ o.supplier.name }}</td>
+          <td>{{ o.created_at|date:"Y-m-d" }}</td>
+          <td>{{ o.get_status_display }}</td>
+          <td class="text-end">{{ o.total_cost }}</td>
+          <td class="text-end">{{ o.net_total }}</td>
+          <td>
+            <div class="btn-group btn-group-sm">
+              <a href="{% url 'purchase_order_detail' o.pk %}" class="btn btn-outline-secondary"><i class="fa fa-eye"></i></a>
+              <a href="{% url 'purchase_order_edit' o.pk %}" class="btn btn-outline-primary"><i class="fa fa-edit"></i></a>
+              <a href="{% url 'purchase_order_delete' o.pk %}" class="btn btn-outline-danger"><i class="fa fa-trash"></i></a>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-center">No purchase orders.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
-
-<form class="search-bar">
-  <input name="q" placeholder="Search suppliers..." value="{{ request.GET.q|default:'' }}">
-  <button type="submit"><i class="fa fa-search"></i></button>
-</form>
-
-<table class="table">
-  <thead>
-    <tr>
-      <th>#</th><th>Supplier</th><th>Date</th><th>Status</th><th>Total</th><th>Actions</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for o in orders %}
-    <tr id="po-{{ o.pk }}">
-      <td>{{ o.id }}</td>
-      <td>{{ o.supplier.name }}</td>
-      <td>{{ o.created_at|date:"Y-m-d" }}</td>
-      <td>{{ o.get_status_display }}</td>
-      <td>{{ o.total_cost }}</td>
-      <td>
-        <a href="{% url 'purchase_order_detail' o.pk %}"><i class="fa fa-eye"></i></a>
-        <a href="{% url 'purchase_order_edit' o.pk %}"><i class="fa fa-edit"></i></a>
-        <button class="btn-delete" data-url="{% url 'purchase_order_delete' o.pk %}">
-          <i class="fa fa-trash"></i>
-        </button>
-      </td>
-    </tr>
-    {% empty %}
-    <tr><td colspan="6">No purchase orders.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-
-<script>
-function getCookie(n){let v=document.cookie.match('(^|;)\\s*'+n+'\\s*=\\s*([^;]+)');return v?v.pop():'';}
-$.ajaxSetup({ headers:{ 'X-CSRFToken': getCookie('csrftoken') } });
-$('.btn-delete').click(function(){
-  const url=$(this).data('url'),
-        row='#po-'+url.split('/').slice(-2)[0];
-  if(confirm('Delete this order?')){
-    $.post(url,{},()=>{ showAlert('success','Deleted'); $(row).remove(); });
-  }
-});
-</script>
 {% endblock %}
