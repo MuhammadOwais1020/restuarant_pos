@@ -73,7 +73,7 @@ urlpatterns = [
         name="update_print_status"
     ),
 
-    path('reports/', reports_view, name='reports'),
+    
 
     path('api/sales-report/', sales_report, name='sales-report'),
 
@@ -276,4 +276,11 @@ urlpatterns += [
 
 urlpatterns += [
     path('ledger/raw-material/<int:pk>/', RawMaterialLedgerView.as_view(), name='raw_material_ledger'),
+]
+
+from core.reports import ReportsOverviewView, api_sales_report
+
+urlpatterns += [
+    path('reports/', ReportsOverviewView.as_view(), name='reports'),
+    path('api/sales-report/', api_sales_report, name='api_sales_report'),
 ]
