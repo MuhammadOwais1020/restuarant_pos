@@ -5,7 +5,7 @@ from django.utils import timezone
 # core/views.py  (near the top of your file)
 from django.db.models import Max
 from django.utils import timezone
-
+from django.db import IntegrityError, transaction
 import logging
 logger = logging.getLogger(__name__)
 
@@ -188,42 +188,105 @@ class Order(models.Model):
     # Token number resets each day at 12:00 PM
     token_number = models.PositiveIntegerField(default=0, blank=True, null=True)
 
-    source = models.CharField(max_length=20, choices=[('food_panda', 'Food Panda'), ('walk_in','Walk‑in')], null=True, blank=True)
+    source = models.CharField(max_length=20, choices=[('food_panda', 'Food Panda'), ('walk_in','Walk-in')], null=True, blank=True)
 
     def __str__(self):
         return f"Order #{self.number} – {self.get_status_display()}"
     
     def save(self, *args, **kwargs):
-        logger.debug(f"Order save started for {self.number} at {timezone.now()}")
-        # Auto-generate order.number if blank (e.g., ORD20250531-0001)
-        if not self.created_at:
-            self.created_at = timezone.localtime(timezone.now())  # Ensure the datetime is timezone-aware
-        if not self.number:
-            today = timezone.localtime(timezone.now())  # Make sure this is timezone-aware
-            prefix = today.strftime("ORD%Y%m%d")
-            existing_today = Order.objects.filter(number__startswith=prefix).count() + 1
-            self.number = f"{prefix}-{existing_today:04d}"
+        import time, random
 
-            # Determine token number: resets at 12:00 PM
-            now = timezone.localtime(timezone.now())  # Get local time (timezone-aware)
-            if now.hour < 12:
-                # Count yesterday’s tokens
-                yesterday = today - timezone.timedelta(days=1)
-                last_token = Order.objects.filter(
-                    created_at__date=yesterday,
-                    token_number__isnull=False
-                ).order_by('-token_number').first()
-                self.token_number = (last_token.token_number if last_token else 0) + 1
+        logger.debug(f"Order save started for {self.number} at {timezone.now()}")
+
+        # Pin created_at for stable window math (auto_now_add will set DB value; this keeps our logic stable)
+        if not self.created_at:
+            self.created_at = timezone.localtime(timezone.now())
+
+        # Only auto-generate if missing
+        if not self.number:
+            ref = timezone.localtime(self.created_at)
+
+            # Business day: noon -> next noon
+            noon_today = ref.replace(hour=12, minute=0, second=0, microsecond=0)
+            if ref >= noon_today:
+                window_start = noon_today
+                window_end = noon_today + timezone.timedelta(days=1)
+                business_date = ref.date()
             else:
-                # Count today’s tokens
-                last_token = Order.objects.filter(
-                    created_at__date=today,
-                    token_number__isnull=False
-                ).order_by('-token_number').first()
-                self.token_number = (last_token.token_number if last_token else 0) + 1
+                window_start = noon_today - timezone.timedelta(days=1)
+                window_end = noon_today
+                business_date = (ref - timezone.timedelta(days=1)).date()
+
+            prefix = f"ORD{business_date:%Y%m%d}"
+
+            # Retry to avoid race on unique(number)
+            max_attempts = 25
+            backoff = 0.01
+
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    with transaction.atomic():
+                        # Find the last sequence for *this prefix*, ignoring created_at.
+                        last_with_prefix = (
+                            Order.objects
+                            .select_for_update()  # effective on Postgres/MySQL; harmless on SQLite
+                            .filter(number__startswith=prefix)
+                            .order_by('-number')
+                            .first()
+                        )
+
+                        if last_with_prefix and '-' in last_with_prefix.number:
+                            try:
+                                last_seq = int(last_with_prefix.number.rsplit('-', 1)[-1])
+                            except ValueError:
+                                last_seq = 0
+                        else:
+                            last_seq = 0
+
+                        # Next order number
+                        self.number = f"{prefix}-{last_seq + 1:04d}"
+
+                        # ── TOKEN: only if one wasn't pre-supplied (tables pass session token) ──
+                        if not self.token_number:
+                            # Compute next token from both Orders and TableSessions in the same noon→noon window
+                            last_order_token = (
+                                Order.objects
+                                .filter(
+                                    created_at__gte=window_start,
+                                    created_at__lt=window_end,
+                                    token_number__isnull=False,
+                                )
+                                .aggregate(m=Max('token_number'))['m'] or 0
+                            )
+                            last_session_token = (
+                                TableSession.objects
+                                .filter(
+                                    updated_at__gte=window_start,
+                                    updated_at__lt=window_end,
+                                    token_number__isnull=False,
+                                )
+                                .aggregate(m=Max('token_number'))['m'] or 0
+                            )
+                            self.token_number = max(last_order_token, last_session_token) + 1
+                            
+                        logger.debug(f"Attempt {attempt}: number={self.number}, token={self.token_number}")
+                        super().save(*args, **kwargs)
+                    break  # success
+                except IntegrityError as e:
+                    # If number collided, back off and try the next sequence
+                    if 'core_order.number' in str(e):
+                        time.sleep(random.uniform(backoff, backoff * 4))
+                        # Exponential-ish backoff cap
+                        backoff = min(backoff * 1.5, 0.2)
+                        continue
+                    raise
+            else:
+                # Extremely unlikely unless >25 concurrent collisions
+                raise IntegrityError("Could not generate a unique Order.number after multiple attempts.")
+        else:
+            super().save(*args, **kwargs)
 
         logger.debug(f"Token number set to {self.token_number}")
-        super().save(*args, **kwargs)
 
 from decimal import Decimal
 
@@ -590,6 +653,10 @@ class TableMenuItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
     printed_quantity = models.PositiveIntegerField(default=0, blank=True, null=True)
+
+    created_at = models.DateTimeField(null=True, blank=True)   # when the row was first created
+    updated_at = models.DateTimeField(null=True, blank=True)       # every change
+    last_added_at = models.DateTimeField(null=True, blank=True)  # when qty was last increased
 
     def get_source_object(self):
         if self.source_type == 'menu':
@@ -1054,3 +1121,46 @@ class KitchenVoucherItem(models.Model):
         super().delete(*args, **kwargs)
         if t:
             t.delete()
+
+
+# models.py
+from django.db import models, transaction
+from django.utils import timezone
+
+class TokenSequence(models.Model):
+    """One row per business day (noon→noon) for token allocation."""
+    business_date = models.DateField(unique=True)
+    last = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.business_date} → {self.last}"
+
+def business_date_for(dt):
+    ref = timezone.localtime(dt)
+    noon = ref.replace(hour=12, minute=0, second=0, microsecond=0)
+    return ref.date() if ref >= noon else (ref - timezone.timedelta(days=1)).date()
+
+def next_token_for(dt=None):
+    """Atomically returns next token for the business day."""
+    ref = dt or timezone.now()
+    bday = business_date_for(ref)
+    with transaction.atomic():
+        row, _ = TokenSequence.objects.select_for_update().get_or_create(
+            business_date=bday,
+            defaults={'last': 0},
+        )
+        row.last += 1
+        row.save(update_fields=['last'])
+        return row.last
+
+
+class TokenCounter(models.Model):
+    service_day = models.DateField(unique=True, db_index=True)
+    last        = models.PositiveIntegerField(default=0)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-service_day"]
+
+    def __str__(self):
+        return f"{self.service_day}: {self.last}"

@@ -67,26 +67,86 @@ def compute_recipe_cost(recipe):
 
 
 # core/utils.py
-
-from django.db.models import Max
 from django.utils import timezone
+from django.db.models import Max
 from .models import Order, TableSession
 
-def get_next_token_number():
-    today = timezone.localtime(timezone.now()).date()
+def _business_window(ref=None):
+    ref = timezone.localtime(ref or timezone.now())
+    noon = ref.replace(hour=12, minute=0, second=0, microsecond=0)
+    if ref >= noon:
+        start = noon
+        end   = noon + timezone.timedelta(days=1)
+    else:
+        start = noon - timezone.timedelta(days=1)
+        end   = noon
+    return start, end
 
-    max_order = (
-        Order.objects
-             .filter(created_at__date=today)
-             .aggregate(Max('token_number'))
-        ['token_number__max']
-        or 0
-    )
-    max_session = (
-        TableSession.objects
-             .filter(created_at__date=today)
-             .aggregate(Max('token_number'))
-        ['token_number__max']
-        or 0
-    )
-    return max(max_order, max_session) + 1
+
+# core/utils.py
+from datetime import time, timedelta, datetime
+from django.db import transaction
+from django.db.models import F, Max
+from django.utils import timezone
+
+from .models import TokenCounter
+from .models import Order        # adjust import path
+from .models import TableSession # adjust import path
+
+def _service_day(ref=None):
+    """
+    Returns the 'day' for your business window (12:00 → 11:59 next day).
+    Stored as a date (the date of the 12:00 start).
+    """
+    now = timezone.localtime(ref or timezone.now())
+    noon = now.replace(hour=12, minute=0, second=0, microsecond=0)
+    if now >= noon:
+        return now.date()            # starts today at 12:00
+    else:
+        return (now - timedelta(days=1)).date()  # started yesterday 12:00
+
+def _window_bounds(day):
+    """
+    Convert a service_day (date) into [start, end) datetimes in local tz.
+    """
+    start_naive = datetime.combine(day, time(12, 0))
+    start = timezone.make_aware(start_naive, timezone.get_current_timezone())
+    return start, start + timedelta(days=1)
+
+def _bootstrap_from_history(day) -> int:
+    """
+    When a counter row is created for a past/current day, initialise it from
+    existing records (safe for restarts, imports, etc.). Uses CREATED time.
+    """
+    start, end = _window_bounds(day)
+    m1 = (Order.objects
+          .filter(created_at__gte=start, created_at__lt=end, token_number__isnull=False)
+          .aggregate(m=Max("token_number"))["m"] or 0)
+    m2 = (TableSession.objects
+          .filter(created_at__gte=start, created_at__lt=end, token_number__isnull=False)
+          .aggregate(m=Max("token_number"))["m"] or 0)
+    return max(m1, m2)
+
+def get_next_token_number(ref=None) -> int:
+    """
+    Bullet-proof, concurrency-safe token generator.
+    Uses a single row per service day and SELECT ... FOR UPDATE.
+    """
+    day = _service_day(ref)
+
+    with transaction.atomic():
+        counter, created = (TokenCounter.objects
+                            .select_for_update()
+                            .get_or_create(service_day=day, defaults={"last": 0}))
+
+        # First time we touch this day? Seed it from history once.
+        if created or counter.last == 0:
+            existing_max = _bootstrap_from_history(day)
+            if existing_max > counter.last:
+                counter.last = existing_max
+
+        # Atomic in-db increment
+        counter.last = F("last") + 1
+        counter.save(update_fields=["last"])
+        counter.refresh_from_db(fields=["last"])
+        return int(counter.last)

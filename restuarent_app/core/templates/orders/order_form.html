@@ -771,6 +771,7 @@ border: none;
             <th>Item / Deal</th>
             <th>Qty</th>
             <th>Unit Price</th>
+            <th>Added</th>
             <th>Amount</th>
             <th>Action</th>
           </tr>
@@ -962,6 +963,38 @@ border: none;
 <script id="waiters-data" type="application/json">
   {{ waiters_json|safe }}
 </script>
+
+<script>
+  // --- time helpers ---
+  function _parseISO(iso) {
+    try { return iso ? new Date(iso) : null; } catch { return null; }
+  }
+  function _pad2(n){ return n < 10 ? '0'+n : ''+n; }
+
+  function formatClock(iso) {
+    const d = _parseISO(iso);
+    if (!d) return '—';
+    // 24h "HH:MM". Use toLocaleTimeString if you prefer locale 12/24.
+    return _pad2(d.getHours()) + ':' + _pad2(d.getMinutes());
+  }
+
+  function formatAgo(iso) {
+    const d = _parseISO(iso);
+    if (!d) return '';
+    const sec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hrs = Math.floor(min / 60);
+    return `${hrs}h ${min % 60}m ago`;
+  }
+
+  function formatAddedCell(iso) {
+    if (!iso) return '—';
+    return `${formatClock(iso)} (${formatAgo(iso)})`;
+  }
+</script>
+
 
 <script>
   const watermark = document.getElementById('order-watermark');
@@ -1319,6 +1352,15 @@ allWaiters.forEach(w => {
   }
 
 
+  function refreshAddedTimes() {
+  document.querySelectorAll('#order-items-body .item-added').forEach(td => {
+    const iso = td.getAttribute('data-added') || '';
+    td.textContent = formatAddedCell(iso);
+  });
+}
+setInterval(refreshAddedTimes, 30000);
+
+
     function renderOrderItemsTable() {
       const tbody = document.getElementById('order-items-body');
       tbody.innerHTML = '';
@@ -1337,6 +1379,7 @@ allWaiters.forEach(w => {
             <input type="number" class="item-qty-input" min="1" value="${it.quantity}">
           </td>
           <td class="item-price">${formatPrice(it.unit_price)}</td>
+          <td class="item-added" data-added="${it.added_at || ''}">${formatAddedCell(it.added_at)}</td>
           <td class="item-amount">${amount}</td>
           <td>
             <button class="btn-remove-item"><i class="fa fa-trash"></i></button>
@@ -1348,20 +1391,48 @@ allWaiters.forEach(w => {
       recalcTotals();
     }
 
-    // call to upsert a table item
-    function saveTableItem(tableId, type, id, price, qty=1) {
-      fetch(`/tables/${tableId}/items/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
-        body: JSON.stringify({
-          source_type: type,
-          source_id: id,
-          unit_price: price,
-          quantity: qty
-        })
-      }).then(() => loadTableItems(tableId));
-    }
-    
+function saveTableItem(tableId, type, id, price, qty = 1) {
+  fetch(`/tables/${tableId}/items/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+    body: JSON.stringify({
+      source_type: type,
+      source_id: id,
+      unit_price: price,
+      quantity: qty
+    })
+  })
+  .then(async (r) => {
+    // If POST didn’t create/increment (e.g., returns 200/409 or similar),
+    // bump quantity via PUT using current list as source of truth.
+    if (!r.ok) throw new Error('POST failed');
+    return r.json().catch(() => ({}));
+  })
+  .then((json) => {
+    // If backend returns a status we can inspect, keep it; otherwise just reload
+    return loadTableItems(tableId);
+  })
+  .catch(() => {
+    // Fallback: find current qty in selectedItems and PUT qty+1
+    const cur = selectedItems.find(
+      it => it.type === type && Number(it.id) === Number(id)
+    );
+    const newQty = cur ? (Number(cur.quantity) + 1) : 1;
+
+    fetch(`/tables/${tableId}/items/`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+      body: JSON.stringify({
+        source_type: type,
+        source_id: id,
+        quantity: newQty
+      })
+    })
+    .then(() => loadTableItems(tableId))
+    .catch(() => loadTableItems(tableId)); // still refresh UI
+  });
+}
+
       function loadTableItems(tableId) {
       if (!tableId) {
     // no table → just render your in-memory items
@@ -1376,41 +1447,48 @@ allWaiters.forEach(w => {
             id: it.source_id,
             name: it.name,
             quantity: it.quantity,
-            unit_price: it.unit_price
+            unit_price: it.unit_price,
+            added_at: it.last_added_at || it.created_at || null
           }));
           renderOrderItemsTable();
         });
     }
-    // Add an item (or increment quantity if it already exists)
-    function addItemToOrder(type, id, name, unit_price) {
-      const existingIdx = selectedItems.findIndex(
-        it => it.type === type && it.id === id
-      );
-      let priceToUse = unit_price;
 
-      if (foodPandaCheckbox.checked) {
-          // If Food Panda is selected, use the food panda price
-          const item = allMenuItems.find(mi => mi.id === id);
-          if (item && item.food_panda_price) {
-              priceToUse = item.food_panda_price;
-          } else {
-              priceToUse = 0; // Fallback if no food_panda_price is available
-          }
-      }
-      if (existingIdx > -1) {
-        selectedItems[existingIdx].quantity += 1;
-        selectedItems[existingIdx].unit_price = priceToUse;
-      } else {
-        selectedItems.push({
-          type,
-          id,
-          name,
-          quantity: 1,
-          unit_price: priceToUse
-        });
-      }
-      renderOrderItemsTable();
+    function addItemToOrder(type, id, name, unit_price) {
+  const existingIdx = selectedItems.findIndex(
+    it => it.type === type && Number(it.id) === Number(id)   // ← normalize types
+  );
+  let priceToUse = unit_price;
+
+  if (foodPandaCheckbox.checked) {
+    if (type === 'menu') {
+      const item = allMenuItems.find(mi => Number(mi.id) === Number(id));
+      priceToUse = (item && item.food_panda_price) ? item.food_panda_price : 0;
+    } else {
+      // deal: keep given price (you can adapt if you have deal.food_panda_price in allDeals)
+      priceToUse = unit_price;
     }
+  }
+
+  if (existingIdx > -1) {
+    selectedItems[existingIdx].quantity += 1;
+    selectedItems[existingIdx].unit_price = priceToUse;
+    if (selectedItems[existingIdx].added_at) {
+      selectedItems[existingIdx].added_at = new Date().toISOString(); // keep your timestamp logic
+    }
+  } else {
+    selectedItems.push({
+      type,
+      id,
+      name,
+      quantity: 1,
+      unit_price: priceToUse,
+      added_at: new Date().toISOString()  // ok if you added timestamps
+    });
+  }
+  renderOrderItemsTable();
+}
+
 
     function removeItemFromOrder(idx) {
       selectedItems.splice(idx, 1);
@@ -2024,9 +2102,21 @@ document.getElementById('order-items-body')
     } else {
       // ==== ORDER‐EDIT branch (your existing logic) ====
       const idx = parseInt(tr.dataset.index, 10);
+      const oldQty = selectedItems[idx].quantity;
       selectedItems[idx].quantity = newQty;
+
+      if (newQty > oldQty) {
+        selectedItems[idx].added_at = new Date().toISOString(); // bump timestamp on increase
+      }
+
       tr.querySelector('.item-amount').innerText =
         formatPrice(newQty * selectedItems[idx].unit_price);
+
+      const addedTd = tr.querySelector('.item-added');
+      addedTd.setAttribute('data-added', selectedItems[idx].added_at || '');
+      addedTd.textContent = formatAddedCell(selectedItems[idx].added_at);
+
+
       recalcTotals();
     }
   });
