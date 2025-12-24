@@ -284,3 +284,19 @@ urlpatterns += [
     path('reports/', ReportsOverviewView.as_view(), name='reports'),
     path('api/sales-report/', api_sales_report, name='api_sales_report'),
 ]
+
+from .views import (
+    ConfigurationView, 
+    PrintStationCreateView, 
+    PrintStationUpdateView, 
+    PrintStationDeleteView
+)
+
+urlpatterns += [
+    path('settings/', ConfigurationView.as_view(), name='configuration'),
+    
+    # Print Station Routes
+    path('settings/station/add/', PrintStationCreateView.as_view(), name='station_create'),
+    path('settings/station/<int:pk>/edit/', PrintStationUpdateView.as_view(), name='station_edit'),
+    path('settings/station/<int:pk>/delete/', PrintStationDeleteView.as_view(), name='station_delete'),
+]

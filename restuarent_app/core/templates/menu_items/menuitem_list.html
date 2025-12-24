@@ -37,9 +37,9 @@
       <td>{{ item.rank|default:"" }}</td>
       <td>{{ item.is_available|yesno:'Yes,No' }}</td>
       <td>
-        <a href="{% url 'menuitem_detail' item.pk %}">
+        {% comment %} <a href="{% url 'menuitem_detail' item.pk %}">
           <i class="fa fa-eye"></i>
-        </a>
+        </a> {% endcomment %}
         <a href="{% url 'menuitem_edit' item.pk %}">
           <i class="fa fa-edit"></i>
         </a>

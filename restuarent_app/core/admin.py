@@ -1,8 +1,34 @@
 from django.contrib import admin
-
-# Register your models here.
 from django.contrib import admin
 from .models import Unit, RawMaterialUnitConversion
+
+
+from django.contrib import admin
+from .models import POSSettings, PrintStation, TokenSequence, Category, MenuItem
+
+@admin.register(POSSettings)
+class POSSettingsAdmin(admin.ModelAdmin):
+    list_display = ('restaurant_name', 'start_of_day_time', 'updated_at')
+
+@admin.register(PrintStation)
+class PrintStationAdmin(admin.ModelAdmin):
+    list_display = ('name', 'print_separate_slip', 'use_separate_sequence')
+
+@admin.register(TokenSequence)
+class TokenSequenceAdmin(admin.ModelAdmin):
+    list_display = ('business_date', 'station', 'last')
+    list_filter = ('station',)
+
+# Make sure Category and MenuItem admins allow selecting the Station
+@admin.register(Category)
+class CategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'default_station', 'show_in_orders')
+
+@admin.register(MenuItem)
+class MenuItemAdmin(admin.ModelAdmin):
+    list_display = ('name', 'category', 'station', 'price')
+    list_filter = ('category', 'station')
+
 
 @admin.register(Unit)
 class UnitAdmin(admin.ModelAdmin):

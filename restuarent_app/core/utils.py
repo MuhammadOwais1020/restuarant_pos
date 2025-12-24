@@ -127,26 +127,58 @@ def _bootstrap_from_history(day) -> int:
           .aggregate(m=Max("token_number"))["m"] or 0)
     return max(m1, m2)
 
-def get_next_token_number(ref=None) -> int:
+
+from django.utils import timezone
+from django.db import transaction
+import datetime
+
+def get_business_date(dt=None):
     """
-    Bullet-proof, concurrency-safe token generator.
-    Uses a single row per service day and SELECT ... FOR UPDATE.
+    Calculates the 'Business Date' based on POSSettings.start_of_day_time.
+    If current time < start_time, it belongs to the previous calendar day.
     """
-    day = _service_day(ref)
+    from .models import POSSettings  # delayed import to avoid circular dep
+    
+    ref = dt or timezone.localtime(timezone.now())
+    
+    # Get setting or default to 06:00 AM
+    try:
+        settings_obj = POSSettings.objects.first()
+        start_time = settings_obj.start_of_day_time if settings_obj else datetime.time(6, 0)
+    except:
+        start_time = datetime.time(6, 0)
+
+    # Create a timestamp for Today at Start Time
+    today_start = ref.replace(hour=start_time.hour, minute=start_time.minute, second=0, microsecond=0)
+
+    if ref >= today_start:
+        return ref.date()
+    else:
+        return (ref - datetime.timedelta(days=1)).date()
+    
+
+def get_next_token_number(station=None):
+    """
+    Atomically generates the next token number.
+    If 'station' is provided and has 'use_separate_sequence=True', generates from that station's counter.
+    Otherwise, generates from the Global (None) counter.
+    """
+    from .models import TokenSequence, PrintStation
+
+    # Determine if we need a specific sequence or the global one
+    target_station = None
+    if station and station.use_separate_sequence:
+        target_station = station
+
+    b_date = get_business_date()
 
     with transaction.atomic():
-        counter, created = (TokenCounter.objects
-                            .select_for_update()
-                            .get_or_create(service_day=day, defaults={"last": 0}))
-
-        # First time we touch this day? Seed it from history once.
-        if created or counter.last == 0:
-            existing_max = _bootstrap_from_history(day)
-            if existing_max > counter.last:
-                counter.last = existing_max
-
-        # Atomic in-db increment
-        counter.last = F("last") + 1
-        counter.save(update_fields=["last"])
-        counter.refresh_from_db(fields=["last"])
-        return int(counter.last)
+        # Lock the row for this date + station
+        row, created = TokenSequence.objects.select_for_update().get_or_create(
+            business_date=b_date,
+            station=target_station,
+            defaults={'last': 0}
+        )
+        row.last += 1
+        row.save(update_fields=['last'])
+        return row.last

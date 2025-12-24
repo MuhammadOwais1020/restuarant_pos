@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+
+{% block title %}System Configuration{% endblock %}
+
+{% block content %}
+<div class="container-fluid p-4">
+    <div class="row">
+        <div class="col-md-5">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fa fa-cogs"></i> General Configuration</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Restaurant Name</label>
+                            {{ settings_form.restaurant_name }}
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Theme Color</label>
+                            {{ settings_form.theme_color }}
+                        </div>
+                        
+                        <div class="alert alert-info d-flex align-items-center" role="alert">
+                            <i class="fa fa-info-circle me-2"></i>
+                            <div>
+                                <strong>Token Logic:</strong> Daily tokens reset automatically at the time selected below.
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Business Day Start Time</label>
+                            {{ settings_form.start_of_day_time }}
+                            <div class="form-text text-muted">
+                                e.g., if you set 06:00 AM, tokens reset at 6 AM.
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Logo</label>
+                            {{ settings_form.logo }}
+                        </div>
+
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fa fa-save"></i> Save Global Settings
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-7">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fa fa-print"></i> Print Stations & Logic</h5>
+                    <a href="{% url 'station_create' %}" class="btn btn-sm btn-success">
+                        <i class="fa fa-plus"></i> Add Station
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Station Name</th>
+                                <th>Printer</th>
+                                <th class="text-center">Split Slip?</th>
+                                <th class="text-center">Split Seq?</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for station in stations %}
+                            <tr>
+                                <td class="fw-bold">{{ station.name }}</td>
+                                <td>
+                                    {% if station.printer_name %}
+                                        <span class="badge bg-secondary">{{ station.printer_name }}</span>
+                                    {% else %}
+                                        <span class="text-muted small">Not set</span>
+                                    {% endif %}
+                                </td>
+                                
+                                <td class="text-center">
+                                    {% if station.print_separate_slip %}
+                                        <span class="badge bg-success"><i class="fa fa-check"></i> Yes</span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark">Combined</span>
+                                    {% endif %}
+                                </td>
+
+                                <td class="text-center">
+                                    {% if station.use_separate_sequence %}
+                                        <span class="badge bg-primary" title="Counts 1, 2, 3...">Unique (1,2,3)</span>
+                                    {% else %}
+                                        <span class="badge bg-light text-dark" title="Uses Main Token #">Global</span>
+                                    {% endif %}
+                                </td>
+
+                                <td class="text-end">
+                                    <a href="{% url 'station_edit' station.pk %}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fa fa-edit"></i>
+                                    </a>
+                                    <a href="{% url 'station_delete' station.pk %}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Are you sure?');">
+                                        <i class="fa fa-trash"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-muted">
+                                    No stations defined. All items will print to Global/Default.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="mt-3">
+                <div class="card bg-light border-0">
+                    <div class="card-body">
+                        <h6><i class="fa fa-lightbulb"></i> How this works:</h6>
+                        <ul class="small text-muted mb-0">
+                            <li><strong>Split Slip:</strong> If YES, items for this station (e.g., BBQ) print on a physically separate piece of paper.</li>
+                            <li><strong>Split Seq:</strong> If YES, this station generates its own Token Numbers (BBQ #1, BBQ #2) instead of using the Main Kitchen #.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

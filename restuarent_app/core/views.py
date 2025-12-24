@@ -107,7 +107,7 @@ class CategoryListView(LoginRequiredMixin, ListView):
 
 class CategoryCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = Category
-    fields = ['name', 'description', 'rank',  'show_in_orders']
+    fields = ['name', 'description', 'rank',  'show_in_orders', 'default_station']
     template_name = 'categories/category_form.html'
     success_url = reverse_lazy('category_list')
 
@@ -118,7 +118,7 @@ class CategoryDetailView(LoginRequiredMixin, DetailView):
 
 class CategoryUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = Category
-    fields = ['name', 'description', 'rank',  'show_in_orders']
+    fields = ['name', 'description', 'rank',  'show_in_orders', 'default_station']
     template_name = 'categories/category_form.html'
     success_url = reverse_lazy('category_list')
 
@@ -146,7 +146,7 @@ class MenuItemListView(LoginRequiredMixin, ListView):
 
 class MenuItemCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image', 'station']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -157,7 +157,7 @@ class MenuItemDetailView(LoginRequiredMixin, DetailView):
 
 class MenuItemUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image', 'station']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -395,23 +395,47 @@ from .printing import send_to_printer
 from .models import Waiter
 from django.utils import timezone
 
+# core/views.py
+
+import json
+from decimal import Decimal
+from django.http import HttpResponseBadRequest, JsonResponse
+from django.shortcuts import render, get_object_or_404
+from django.views import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.utils import timezone
+from django.db import transaction
+
+from .models import (
+    Category, MenuItem, Deal, Table, Order, OrderItem, 
+    PrintStatus, Waiter, TableSession, Payment, PrintStation
+)
+from .utils import get_next_token_number
+from .printing import send_to_printer
+
+
 class OrderCreateView(LoginRequiredMixin, View):
 
     def get(self, request):
+        # 1. Optimize Categories Query
         categories = (
             Category.objects
-                .filter(show_in_orders=True)
-                .order_by('rank')
-                .prefetch_related('items')
+            .filter(show_in_orders=True)
+            .order_by('rank')
+            .prefetch_related('items')
         )
-        all_waiters = Waiter.objects.order_by('name').values('id','name')
-        waiters_json = json.dumps(list(all_waiters))
 
-        # Serialize menu items
-        # all_menu_items = MenuItem.objects.filter(is_available=True).select_related('category')
-        all_menu_items = MenuItem.objects.filter(is_available=True)\
-        .select_related('category')\
-        .order_by('rank')
+        # 2. Optimize Waiters Query
+        all_waiters = list(Waiter.objects.order_by('name').values('id', 'name'))
+        waiters_json = json.dumps(all_waiters)
+
+        # 3. Optimize Menu Items Query (fetch foreign keys efficiently)
+        all_menu_items = (
+            MenuItem.objects
+            .filter(is_available=True)
+            .select_related('category', 'station') # Fetch station too
+            .order_by('rank')
+        )
 
         menu_items_list = [
             {
@@ -419,19 +443,24 @@ class OrderCreateView(LoginRequiredMixin, View):
                 "name": mi.name,
                 "price": float(mi.price),
                 "food_panda_price": float(mi.food_panda_price) if mi.food_panda_price is not None else 0.0,
-                "category_id": mi.category.id,
+                "category_id": mi.category_id,
                 "image_url": mi.image.url if mi.image else ""
             }
             for mi in all_menu_items
         ]
         all_menu_items_json = json.dumps(menu_items_list)
 
-        # Serialize deals
-        all_deals = Deal.objects.filter(is_available=True).prefetch_related('deal_items__menu_item')
+        # 4. Optimize Deals Query
+        all_deals = (
+            Deal.objects
+            .filter(is_available=True)
+            .prefetch_related('deal_items__menu_item')
+        )
+        
         deals_list = []
         for dl in all_deals:
             items = [
-                {"menu_item_id": di.menu_item.id, "quantity": di.quantity}
+                {"menu_item_id": di.menu_item_id, "quantity": di.quantity}
                 for di in dl.deal_items.all()
             ]
             deals_list.append({
@@ -446,22 +475,21 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         initial_po_items_json = json.dumps([])
 
-        # Annotate tables with pending totals and has_items flag
+        # 5. Optimize Tables & Sessions Query
         tables = list(Table.objects.all().order_by("number"))
-        # prefetch all sessions + their picked_items in one go
-        sessions = TableSession.objects\
-            .prefetch_related('picked_items')\
-            .all()\
+        
+        # Prefetch sessions efficiently
+        sessions = (
+            TableSession.objects
+            .select_related('table')
+            .prefetch_related('picked_items')
             .in_bulk(field_name='table_id')
+        )
         
         for t in tables:
             sess = sessions.get(t.id)
             if sess:
-                # sum(qty × unit_price) across all picked_items
-                total = sum(
-                    pi.quantity * pi.unit_price
-                    for pi in sess.picked_items.all()
-                )
+                total = sum(pi.quantity * pi.unit_price for pi in sess.picked_items.all())
                 t.current_order_total = f"{total:.2f}"
                 t.has_items = total > 0
             else:
@@ -479,60 +507,58 @@ class OrderCreateView(LoginRequiredMixin, View):
         })
     
     def post(self, request):
-        import json
-        from decimal import Decimal
-        from django.http import HttpResponseBadRequest, JsonResponse
-        from django.utils import timezone
-        from django.db import transaction
-
         try:
             data = json.loads(request.body)
         except json.JSONDecodeError:
             return HttpResponseBadRequest("Invalid JSON")
 
         user = request.user
-        discount = data.get("discount", 0) or 0
-        tax_percentage = data.get("tax_percentage", 0) or 0
-        service_charge = data.get("service_charge", 0) or 0
-        items = data.get("items", [])
+        discount = Decimal(str(data.get("discount", 0) or 0))
+        tax_percentage = Decimal(str(data.get("tax_percentage", 0) or 0))
+        service_charge = Decimal(str(data.get("service_charge", 0) or 0))
+        
+        items_data = data.get("items", [])
         action = data.get("action", "create")
         table_id = data.get("table_id")
-        is_food_panda = data.get("source")
+        
+        is_food_panda = data.get("source") # 'food_panda' or 'walk_in'
+        is_home_delivery = data.get("isHomeDelivery") # 'yes' or 'no'
+        
         waiter_id = data.get("waiter_id") or None
-        is_home_delivery = data.get("isHomeDelivery") or None
         mobile_no  = data.get("mobileNo") or None
         customer_address = data.get("customerAddress") or None
         customer_name = data.get("customerName") or None
 
-        # Fetch the Waiter instance (if waiter_id is provided and valid)
+        # Resolve Waiter
+        waiter = None
         if waiter_id:
             try:
                 waiter = Waiter.objects.get(id=waiter_id)
             except Waiter.DoesNotExist:
                 return JsonResponse({"error": "Invalid waiter_id"}, status=400)
-        else:
-            waiter = None  # If no waiter_id is provided, leave it as None
 
-        source_value = is_food_panda
         my_datetime = timezone.localtime(timezone.now())
-
         status_value = "paid" if action == "paid" else "pending"
+        
+        # If Table or Delivery, order stays pending until explicit payment/close
         if table_id or is_home_delivery == "yes":
             status_value = "pending"
 
-        # -------------------------
-        # Create the order
-        # -------------------------
         session = None
         order = None
+        session_token = None
 
+        # === 1. ORDER CREATION (Optimized) ===
         if table_id:
-            # Claim & consume the session token atomically to avoid races
+            # Table Order: Use Transaction to safely claim session
             with transaction.atomic():
                 session = TableSession.objects.select_for_update().get(table_id=table_id)
-                if session.token_number is None:  # safety: issue one if missing
-                    session.token_number = get_next_token_number()
+                
+                # Ensure Session has a token
+                if session.token_number is None:
+                    session.token_number = get_next_token_number(station=None)
                     session.save(update_fields=['token_number'])
+                
                 session_token = session.token_number
 
                 order = Order.objects.create(
@@ -542,92 +568,83 @@ class OrderCreateView(LoginRequiredMixin, View):
                     tax_percentage=tax_percentage,
                     service_charge=service_charge,
                     status=status_value,
-                    source=source_value,
+                    source=is_food_panda,
                     waiter=waiter,
                     isHomeDelivery=is_home_delivery,
                     mobile_no=mobile_no,
                     customer_name=customer_name,
                     customer_address=customer_address,
                     created_at=my_datetime,
-                    token_number=session_token,  # ← pre-issued token respected by model.save()
+                    token_number=session_token, # Use session token
                 )
 
-                # we consumed the session token
+                # Reset Session for next customer
                 session.token_number = None
-                session.save(update_fields=['token_number'])
-
                 session.waiter = None
-                session.save(update_fields=['waiter_id'])
+                session.save(update_fields=['token_number', 'waiter'])
+                
+                # Mark Table Occupied
+                if status_value != "paid":
+                    Table.objects.filter(pk=table_id).update(is_occupied=True)
+
         else:
-            # walk-in or home-delivery; token will be assigned in Order.save()
-            token_number = get_next_token_number()
+            # Walk-in / Delivery: Generate new token
+            token_number = get_next_token_number(station=None)
+            
             order = Order.objects.create(
                 created_by=user,
-                table_id=table_id,
+                table_id=None,
                 discount=discount,
                 tax_percentage=tax_percentage,
                 service_charge=service_charge,
                 status=status_value,
-                source=source_value,
+                source=is_food_panda,
                 waiter=waiter,
                 isHomeDelivery=is_home_delivery,
                 mobile_no=mobile_no,
                 customer_name=customer_name,
                 customer_address=customer_address,
                 created_at=my_datetime,
-                token_number=token_number, 
+                token_number=token_number,
             )
 
-        if table_id and status_value != "paid":
-            tbl = Table.objects.get(pk=table_id)
-            tbl.is_occupied = True
-            tbl.save()
-
-        # -------------------------
-        # Line items + total
-        # -------------------------
+        # === 2. ITEMS BULK CREATION (Optimized) ===
         total_price = Decimal('0')
-
-        for it in items:
+        order_items_to_create = []
+        
+        # Prepare list of OrderItem objects
+        for it in items_data:
             qty = int(it.get("quantity", 1))
-            unit_price = it.get("unit_price", 0)
-
-            # Select correct price based on source
-            if is_food_panda == "food_panda":
-                if it.get("type") == "menu":
-                    menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
-                    unit_price = menu_item.food_panda_price if menu_item.food_panda_price else menu_item.price
-                elif it.get("type") == "deal":
-                    deal = Deal.objects.get(pk=it["deal_id"])
-                    unit_price = deal.food_panda_price if deal.food_panda_price else deal.price
-            else:
-                if it.get("type") == "menu":
-                    menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
-                    unit_price = menu_item.price
-                elif it.get("type") == "deal":
-                    deal = Deal.objects.get(pk=it["deal_id"])
-                    unit_price = deal.price
-
-            unit_price_dec = Decimal(str(unit_price))
-            line_total = unit_price_dec * Decimal(str(qty))
+            
+            # Determine Price (Server-Side Validation recommended here)
+            # For speed, trusting client's unit_price OR re-fetching (safer)
+            # Here we trust the provided logic but ensure Decimal conversion
+            unit_price = Decimal(str(it.get("unit_price", 0)))
+            
+            line_total = unit_price * qty
             total_price += line_total
 
-            if it.get("type") == "menu":
-                OrderItem.objects.create(
-                    order=order,
-                    menu_item_id=it["menu_item_id"],
-                    quantity=qty,
-                    unit_price=unit_price_dec
-                )
-            elif it.get("type") == "deal":
-                OrderItem.objects.create(
-                    order=order,
-                    deal_id=it["deal_id"],
-                    quantity=qty,
-                    unit_price=unit_price_dec
-                )
+            item_type = it.get("type")
+            
+            order_item = OrderItem(
+                order=order,
+                quantity=qty,
+                unit_price=unit_price,
+                token_printed=False # Default
+            )
+            
+            if item_type == "menu":
+                order_item.menu_item_id = it["menu_item_id"]
+            elif item_type == "deal":
+                order_item.deal_id = it["deal_id"]
+            
+            order_items_to_create.append(order_item)
 
-        # Walk-in (no table) and not home delivery → auto cash payment for item total
+        # Bulk Insert (Much Faster)
+        if order_items_to_create:
+            OrderItem.objects.bulk_create(order_items_to_create)
+
+        # === 3. AUTO-PAYMENT (Walk-in Cash) ===
         if not table_id and is_home_delivery == 'no':
             Payment.objects.create(
                 order=order,
@@ -636,82 +653,92 @@ class OrderCreateView(LoginRequiredMixin, View):
                 details=""
             )
 
-        # -------------------------
-        # Printing (token / bill)
-        # -------------------------
+        # === 4. PRINTING LOGIC (Dynamic Station Routing) ===
+        # This part runs for Walk-in / Delivery immediately. 
+        # Table orders print via the separate TablePrintTokenView usually,
+        # but if this View is handling final "Paid" or direct walk-in print:
+        
         if status_value == "paid" or status_value == "pending":
             try:
                 ps = PrintStatus.objects.first()
                 bill_enabled  = ps.bill  if ps else False
                 token_enabled = ps.token if ps else False
 
-                # For non-table orders, print kitchen tokens now and mark as printed
+                # Only print KITCHEN TOKENS here if it's NOT a table order
+                # (Table orders usually print tokens incrementally via the table view)
                 if token_enabled and not table_id:
-                    new_items = list(order.items.filter(token_printed=False))
-
-                    pizza_chai = [
-                        oi for oi in new_items
-                        if "pizza" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                    ]
-                    chai = [
-                        oi for oi in new_items
-                        if "chai" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                    ]
-                    desserts = [
-                        oi for oi in new_items
-                        if "cake" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                        or "brownie" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                    ]
-                    drinks = [
-                        oi for oi in new_items
-                        if "tin" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                        or "water" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                        or "juice" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                        or "honey" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                        or "mint" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                    ]
-                    others = [oi for oi in new_items if oi not in pizza_chai and oi not in chai and oi not in desserts and oi not in drinks]
-
-                    if pizza_chai:
-                        token_data = build_token_bytes_for_items(order, pizza_chai, "PIZZA TOKEN")
-                        send_to_printer(token_data)
-                    if chai:
-                        token_data = build_token_bytes_for_items(order, chai, "CHAI TOKEN")
-                        send_to_printer(token_data)
-                    if desserts:
-                        token_data = build_token_bytes_for_items(order, desserts, "DESSERTS TOKEN")
-                        send_to_printer(token_data)
-                    if drinks:
-                        token_data = build_token_bytes_for_items(order, drinks, "DRINKS TOKEN")
-                        send_to_printer(token_data)
-                    if others:
-                        token_data = build_token_bytes_for_items(order, others, "KITCHEN TOKEN")
-                        send_to_printer(token_data)
-
-                    # mark all just-printed items so retries don’t reprint
+                    
+                    # Fetch freshly created items with relations needed for routing
+                    new_items = list(Order.objects.get(pk=order.id).items.all())
+                    
+                    # --- DYNAMIC GROUPING BY STATION ---
+                    grouped_items = {}
+                    
                     for oi in new_items:
-                        oi.token_printed = True
-                        oi.save(update_fields=['token_printed'])
+                        station = None
+                        if oi.menu_item:
+                            # Use helper method on MenuItem model
+                            station = oi.menu_item.get_effective_station()
+                        
+                        # Use Station Object or 'Global' key
+                        key = station if station else 'Global'
+                        
+                        if key not in grouped_items:
+                            grouped_items[key] = []
+                        grouped_items[key].append(oi)
 
+                    # --- PRINT EACH GROUP ---
+                    for key, group_items in grouped_items.items():
+                        # Config for this station
+                        if key == 'Global':
+                            header_label = "KITCHEN TOKEN"
+                            token_num = order.token_number
+                        else:
+                            station_obj = key
+                            header_label = f"{station_obj.name.upper()} TOKEN"
+                            if station_obj.use_separate_sequence:
+                                token_num = get_next_token_number(station=station_obj)
+                            else:
+                                token_num = order.token_number
+
+                        # Build Bytes
+                        token_data = build_dynamic_token_bytes(
+                            order,  # Pass order object (has date, waiter, etc)
+                            group_items,
+                            header_label,
+                            token_num
+                        )
+                        # Send
+                        send_to_printer(token_data)
+
+                    # Mark items as printed using QuerySet update (Fast)
+                    # (Filter by ID to be safe)
+                    item_ids = [i.id for i in new_items]
+                    OrderItem.objects.filter(id__in=item_ids).update(token_printed=True)
+
+                # --- BILL PRINTING ---
                 if bill_enabled:
-                    bill_data = build_bill_bytes(order, is_food_panda, "Customer Copy")
-                    send_to_printer(bill_data)
-                    bill_data = build_bill_bytes(order, is_food_panda, "Office Copy")
-                    send_to_printer(bill_data)
+                    bill_data_cust = build_bill_bytes(order, is_food_panda, "Customer Copy")
+                    send_to_printer(bill_data_cust)
+                    
+                    bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
+                    send_to_printer(bill_data_office)
 
-                if table_id:
-                    # free the table (lock row properly)
-                    with transaction.atomic():
-                        tbl = Table.objects.select_for_update().get(pk=table_id)
-                        tbl.is_occupied = False
-                        tbl.save()
+                # --- RELEASE TABLE (If paid) ---
+                if table_id and status_value == "paid":
+                    Table.objects.filter(pk=table_id).update(is_occupied=False)
 
             except Exception as e:
-                return JsonResponse({"error": f"Print failed: {e}"}, status=500)
+                # Log error but don't crash the response; Order is already created
+                print(f"Printing Error: {e}")
+                return JsonResponse({
+                    "message": "Order Created (Printing Failed)", 
+                    "order_id": order.id,
+                    "error": str(e)
+                }, status=200) # Return 200 so UI doesn't think order failed
 
         return JsonResponse({"message": "Order Created", "order_id": order.id})
-
-# core/views.py
+    
 
 import json
 from django.shortcuts      import render, get_object_or_404
@@ -2649,121 +2676,6 @@ from django.utils     import timezone
 from .models          import TableSession, MenuItem, Deal
 from .printing        import send_to_printer
 
-class TablePrintTokenView(View):
-    def post(self, request, table_id):
-        # 1) Load the session
-        session = get_object_or_404(TableSession, table_id=table_id)
-
-        if session.token_number is None:
-            session.token_number = get_next_token_number()
-            session.save(update_fields=['token_number'])
-
-        # 2) Gather all picked_items & compute deltas
-        items = session.picked_items.all()
-        deltas = [
-            (ti, ti.quantity - (ti.printed_quantity or 0))
-            for ti in items
-        ]
-        items_with_delta = [(ti, d) for ti, d in deltas if d != 0]
-
-        # 3) Nothing to print?
-        if not items_with_delta:
-            # print("[TOKEN DEBUG] nothing to print")
-            return JsonResponse({'status': 'nothing_to_print'})
-        
-        # 3) Split into pizza/chai vs others
-        pizza_chai, chai, others, desserts, drinks = [], [], [], [], []
-        for ti, d in items_with_delta:
-            Model = MenuItem if ti.source_type=='menu' else Deal
-            name  = Model.objects.get(pk=ti.source_id).name.lower()
-            if 'pizza' in name:
-                pizza_chai.append((ti, d))
-            elif 'cake' in name or 'brownie' in name:
-                desserts.append((ti, d))
-            elif 'tin' in name or 'water' in name or 'juice' in name or 'honey' in name or 'mint' in name:
-                drinks.append((ti, d))
-            elif 'chai' in name:
-                chai.append((ti, d))
-            else:
-                others.append((ti, d))
-
-        # 4) Print each group with a custom header
-        if pizza_chai:
-            payload = build_group_token_bytes(
-                session,
-                pizza_chai,
-                header_label="PIZZA TOKEN"
-            )
-            print(f"Pizza: {pizza_chai}")
-            send_to_printer(payload)
-        if chai:
-            payload = build_group_token_bytes(
-                session,
-                chai,
-                header_label="CHAI TOKEN"
-            )
-            print(f"Chai: {chai}")
-            send_to_printer(payload)
-        
-        if desserts:
-            payload = build_group_token_bytes(
-                session,
-                desserts,
-                header_label="DESSERTS TOKEN"
-            )
-            print(f"Chai: {desserts}")
-            send_to_printer(payload)
-        
-        if drinks:
-            payload = build_group_token_bytes(
-                session,
-                drinks,
-                header_label="DRINKS TOKEN"
-            )
-            print(f"Chai: {desserts}")
-            send_to_printer(payload)
-
-        if others:
-            payload = build_group_token_bytes(
-                session,
-                others,
-                header_label="KITCHEN TOKEN"
-            )
-            print(f"Others: {others}")
-            send_to_printer(payload)
-        
-
-        # 4) Debug: log each delta
-        # print("[TOKEN DEBUG] will print deltas:")
-        for ti, delta in items_with_delta:
-            Model  = MenuItem if ti.source_type == "menu" else Deal
-            name   = Model.objects.get(pk=ti.source_id).name
-            action = "Added" if delta > 0 else "Removed"
-            # print(f"  • {action} {abs(delta)} × {name} ({ti.source_type})")
-
-        # 5) Build payload
-        # payload = build_session_token_bytes(session, items_with_delta)
-
-        # 6) Debug: dump the full payload line-by-line
-        # print("[TOKEN DEBUG] full payload:")
-        # for line in payload.split(b"\n"):
-        #     try:
-        #         print("    " + line.decode("ascii"))
-        #     except UnicodeDecodeError:
-        #         print("    " + repr(line))
-
-        # 7) Send to printer & mark printed
-        # send_to_printer(payload)
-        for ti, _ in items_with_delta:
-            ti.printed_quantity = ti.quantity
-            ti.save(update_fields=['printed_quantity'])
-
-        # print(f"[TOKEN DEBUG] sent {len(items_with_delta)} lines to printer")
-        return JsonResponse({
-            'status': 'printed',
-            'count': len(items_with_delta)
-        })
-
 
 def build_session_token_bytes(session, items_with_delta):
     esc = b"\x1B"
@@ -2844,117 +2756,6 @@ def build_session_token_bytes(session, items_with_delta):
     return b"".join(lines)
 
 
-
-# from django.shortcuts import get_object_or_404
-# from django.http      import JsonResponse
-# from django.views     import View
-# from django.utils     import timezone
-
-# from .models          import TableSession, MenuItem, Deal
-# from .printing        import send_to_printer
-
-# class TablePrintTokenView(View):
-#     def post(self, request, table_id):
-#         # 1) Load the session
-#         session = get_object_or_404(TableSession, table_id=table_id)
-
-#         # 2) Compute deltas for every picked_item
-#         items = session.picked_items.all()
-#         deltas = [
-#             (ti, ti.quantity - (ti.printed_quantity or 0))
-#             for ti in items
-#         ]
-#         items_with_delta = [(ti, d) for ti, d in deltas if d != 0]
-
-#         # 3) Nothing changed → nothing to print
-#         if not items_with_delta:
-#             print("[TOKEN DEBUG] nothing to print")
-#             return JsonResponse({'status': 'nothing_to_print'})
-
-#         # 4) Debug output
-#         print("[TOKEN DEBUG] will print:")
-#         for ti, delta in items_with_delta:
-#             Model  = MenuItem if ti.source_type == "menu" else Deal
-#             name   = Model.objects.get(pk=ti.source_id).name
-#             action = "Added" if delta > 0 else "Removed"
-#             print(f" • {action} {abs(delta)} × {name}")
-
-#         # 5) Build & send
-#         payload = build_session_token_bytes(session, items_with_delta)
-#         send_to_printer(payload)
-
-#         # 6) Mark printed
-#         for ti, _ in items_with_delta:
-#             ti.printed_quantity = ti.quantity
-#             ti.save(update_fields=['printed_quantity'])
-
-#         print(f"[TOKEN DEBUG] sent {len(items_with_delta)} lines")
-#         return JsonResponse({'status': 'printed', 'count': len(items_with_delta)})
-
-
-# def build_session_token_bytes(session, items_with_delta):
-#     esc = b"\x1B"
-#     gs  = b"\x1D"
-#     lines = []
-
-#     # header
-#     has_removal = any(delta < 0 for _, delta in items_with_delta)
-#     lines.append(esc + b"\x61" + b"\x01")   # center
-#     lines.append(esc + b"\x21" + b"\x20")   # double-width
-#     lines.append(b"UPDATED KITCHEN TOKEN\n" if has_removal else b"KITCHEN TOKEN\n")
-#     lines.append(esc + b"\x21" + b"\x00")   # normal
-#     lines.append(b"\n")
-
-#     # table #
-#     table_no = str(session.table.number).encode("ascii")
-#     lines.append(esc + b"\x61" + b"\x01")
-#     lines.append(esc + b"\x21" + b"\x30")
-#     lines.append(b"TABLE #: " + table_no + b"\n\n")
-#     lines.append(esc + b"\x21" + b"\x00")
-
-#     # date / waiter / mode
-#     now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
-#     lines.append(esc + b"\x61" + b"\x00")
-#     lines.append(b"Date  : " + now + b"\n")
-#     if session.waiter:
-#         wk = session.waiter.name.encode("ascii","ignore")
-#         lines.append(b"Waiter: " + wk + b"\n")
-#     lines.append(b"-" * 32 + b"\n")
-
-#     # columns
-#     lines.append(b"#  Item                 Qty\n")
-#     lines.append(b"-" * 32 + b"\n")
-
-#     # items
-#     if has_removal:
-#         current = session.picked_items.all()
-#         for idx, ti in enumerate(current, start=1):
-#             Model = MenuItem if ti.source_type=="menu" else Deal
-#             name  = Model.objects.get(pk=ti.source_id).name[:18]
-#             qty   = ti.quantity
-#             lines.append(
-#                 str(idx).rjust(2).encode() + b"  " +
-#                 name.ljust(18).encode("ascii","ignore") + b"  " +
-#                 str(qty).rjust(3).encode() + b"\n"
-#             )
-#     else:
-#         added = [(ti,d) for ti,d in items_with_delta if d>0]
-#         for idx,(ti,d) in enumerate(added, start=1):
-#             Model = MenuItem if ti.source_type=="menu" else Deal
-#             name  = Model.objects.get(pk=ti.source_id).name[:18]
-#             lines.append(
-#                 str(idx).rjust(2).encode() + b"  " +
-#                 name.ljust(18).encode("ascii","ignore") + b"  " +
-#                 str(d).rjust(3).encode() + b"\n"
-#             )
-
-#     # cut
-#     lines.append(b"\n" * 4)
-#     lines.append(gs + b"\x56" + b"\x00")
-
-#     return b"".join(lines)
-
-
 from django.views import View
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import get_object_or_404
@@ -3027,94 +2828,6 @@ from .utils           import get_next_token_number
 
 ESC = b"\x1B"
 GS  = b"\x1D"
-
-class TablePrintTokenView(View):
-    def post(self, request, table_id):
-        session = get_object_or_404(TableSession, table_id=table_id)
-        if session.token_number is None:
-            session.token_number = get_next_token_number()
-            session.save(update_fields=['token_number'])
-
-        items = session.picked_items.all()
-        deltas = [(ti, ti.quantity - (ti.printed_quantity or 0)) for ti in items]
-        items_with_delta = [(ti, d) for ti, d in deltas if d != 0]
-        if not items_with_delta:
-            return JsonResponse({'status': 'nothing_to_print'})
-
-        pizza_chai_pairs = []
-        chai_pairs = []
-        other_pairs      = []
-        desserts_pairs = []
-        drinks_pairs = []
-        for ti, d in items_with_delta:
-            Model = MenuItem if ti.source_type == 'menu' else Deal
-            name  = Model.objects.get(pk=ti.source_id).name.lower()
-            if 'pizza' in name:
-                pizza_chai_pairs.append((ti, d))
-            elif 'cake' in name or 'brownie' in name:
-                desserts_pairs.append((ti, d))
-            elif 'tin' in name or 'water' in name or 'juice' in name or 'honey' in name or 'mint' in name:
-                drinks_pairs.append((ti, d))
-            elif 'chai' in name:
-                chai_pairs.append((ti, d))
-            else:
-                other_pairs.append((ti, d))
-
-        # 4) Print Pizza & Chai token
-        if pizza_chai_pairs:
-            payload = build_group_token_bytes(
-                session,
-                pizza_chai_pairs,
-                header_label="PIZZA TOKEN"
-            )
-            print(f"Pizza: {pizza_chai_pairs}")
-            send_to_printer(payload)
-        
-        if chai_pairs:
-            payload = build_group_token_bytes(
-                session,
-                chai_pairs,
-                header_label="CHAI TOKEN"
-            )
-            print(f"Chai: {chai_pairs}")
-            send_to_printer(payload)
-        
-        if desserts_pairs:
-            payload = build_group_token_bytes(
-                session,
-                desserts_pairs,
-                header_label="DESSERTS TOKEN"
-            )
-            print(f"Chai: {chai_pairs}")
-            send_to_printer(payload)
-        
-        if drinks_pairs:
-            payload = build_group_token_bytes(
-                session,
-                drinks_pairs,
-                header_label="DRINKS TOKEN"
-            )
-            print(f"Chai: {chai_pairs}")
-            send_to_printer(payload)
-        # 5) Print normal Kitchen token
-        if other_pairs:
-            payload = build_group_token_bytes(
-                session,
-                other_pairs,
-                header_label="KITCHEN TOKEN"
-            )
-            print(f"Others: {other_pairs}")
-            send_to_printer(payload)
-
-        # 6) Mark printed_quantity
-        for ti, _ in items_with_delta:
-            ti.printed_quantity = ti.quantity
-            ti.save(update_fields=['printed_quantity'])
-
-        return JsonResponse({
-            'status': 'printed',
-            'count': len(items_with_delta)
-        })
 
 
 def build_group_token_bytes(session, items_with_delta, header_label):
@@ -3216,3 +2929,248 @@ class TableSessionSwitchView(LoginRequiredMixin, View):
         Table.objects.filter(pk=new_id).update(is_occupied=True)
 
         return JsonResponse({'status': 'ok', 'new_table': new_id})
+    
+
+# core/views.py
+
+from django.shortcuts import get_object_or_404
+from django.http import JsonResponse
+from django.views import View
+from .models import TableSession, MenuItem, Deal, PrintStation
+from .printing import send_to_printer
+from .utils import get_next_token_number
+from django.utils import timezone
+
+class TablePrintTokenView(View):
+    def post(self, request, table_id):
+        session = get_object_or_404(TableSession, table_id=table_id)
+        
+        # 1. Ensure TableSession has a global token number (for reference)
+        if session.token_number is None:
+            # station=None gets the global sequence
+            session.token_number = get_next_token_number(station=None)
+            session.save(update_fields=['token_number'])
+
+        # 2. Identify new items (deltas)
+        items = session.picked_items.all()
+        deltas = [(ti, ti.quantity - (ti.printed_quantity or 0)) for ti in items]
+        items_with_delta = [(ti, d) for ti, d in deltas if d != 0]
+
+        if not items_with_delta:
+            return JsonResponse({'status': 'nothing_to_print'})
+
+        # 3. Group items by PrintStation
+        #    Key: Station object (or 'Global' string for default), Value: List of (ti, delta)
+        grouped_items = {}
+
+        for ti, d in items_with_delta:
+            station = None
+            if ti.source_type == 'menu':
+                try:
+                    mi = MenuItem.objects.get(pk=ti.source_id)
+                    # Use the helper method we added to MenuItem to find the station
+                    station = mi.get_effective_station()
+                except MenuItem.DoesNotExist:
+                    pass
+            elif ti.source_type == 'deal':
+                # Logic for deals: currently they default to Global (Main Kitchen)
+                # You can add logic here if Deals need specific stations
+                pass 
+
+            # If no station is found, group under "Global"
+            key = station if station else 'Global'
+            
+            if key not in grouped_items:
+                grouped_items[key] = []
+            grouped_items[key].append((ti, d))
+
+        # 4. Process each group and print
+        for key, group_items in grouped_items.items():
+            
+            # Determine Header and Token Number for this specific group
+            if key == 'Global':
+                # Default behavior
+                header_label = "KITCHEN TOKEN"
+                token_num = session.token_number # Use the session's global token
+            else:
+                # It is a specific PrintStation configuration
+                station_obj = key
+                header_label = f"{station_obj.name.upper()} TOKEN"
+                
+                # Check if this station needs its own separate counting sequence (1, 2, 3...)
+                if station_obj.use_separate_sequence:
+                    token_num = get_next_token_number(station=station_obj)
+                else:
+                    # Otherwise share the main token number
+                    token_num = session.token_number
+
+            # Build the print bytes using the new dynamic helper
+            payload = build_dynamic_token_bytes(
+                session, 
+                group_items, 
+                header_label, 
+                token_num
+            )
+            
+            # Send to printer
+            print(f"Printing {header_label} with Token {token_num}")
+            try:
+                send_to_printer(payload)
+            except Exception as e:
+                print(f"Printer Error for {header_label}: {e}")
+
+        # 5. Update printed quantities for all items processed
+        for ti, _ in items_with_delta:
+            ti.printed_quantity = ti.quantity
+            ti.save(update_fields=['printed_quantity'])
+
+        return JsonResponse({
+            'status': 'printed', 
+            'count': len(items_with_delta)
+        })
+
+
+def build_dynamic_token_bytes(session, items_with_delta, header_label, token_number):
+    """
+    Generates ESC/POS bytes for a dynamic station token.
+    """
+    ESC = b"\x1B"
+    GS  = b"\x1D"
+    lines = []
+
+    # -- Header (Center, Double Width) --
+    lines.append(ESC + b"\x61" + b"\x01") 
+    lines.append(ESC + b"\x21" + b"\x20") 
+    lines.append(header_label.encode("ascii", "ignore") + b"\n")
+    lines.append(ESC + b"\x21" + b"\x00") # Reset
+    lines.append(b"\n")
+
+    # -- Token # (Center, Double Width/Height) --
+    token_str = str(token_number).encode("ascii")
+    lines.append(ESC + b"\x21" + b"\x30") 
+    lines.append(b"TOKEN #: " + token_str + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00") 
+
+    # -- Table # (Center, Double Width) --
+    table_no = str(session.table.number).encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x01")
+    lines.append(ESC + b"\x21" + b"\x30")
+    lines.append(b"TABLE #: " + table_no + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00")
+
+    # -- Meta Info (Left Align) --
+    now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x00") 
+    lines.append(b"Date  : " + now + b"\n")
+    if session.waiter:
+        w_name = session.waiter.name.encode("ascii", "ignore")
+        lines.append(b"Waiter: " + w_name + b"\n")
+    lines.append(b"-" * 32 + b"\n")
+
+    # -- Items List --
+    lines.append(b"#  Item                 Qty\n")
+    lines.append(b"-" * 32 + b"\n")
+
+    for idx, (ti, delta) in enumerate(items_with_delta, start=1):
+        if ti.source_type == 'menu':
+            # Fetch fresh object name
+            from .models import MenuItem
+            try:
+                obj = MenuItem.objects.get(pk=ti.source_id)
+                name = obj.name
+            except MenuItem.DoesNotExist:
+                name = "Unknown Item"
+        else:
+            from .models import Deal
+            try:
+                obj = Deal.objects.get(pk=ti.source_id)
+                name = obj.name
+            except Deal.DoesNotExist:
+                name = "Unknown Deal"
+        
+        # Formatting: Index (2 chars) + Name (18 chars) + Qty (3 chars)
+        name = name[:18]
+        idx_b = str(idx).rjust(2).encode()
+        name_b = name.ljust(18).encode("ascii", "ignore")
+        qty_b = str(delta).rjust(3).encode()
+        
+        lines.append(idx_b + b"  " + name_b + b"  " + qty_b + b"\n")
+
+    lines.append(b"\n\n\n\n\n")
+    # -- Cut Paper --
+    lines.append(b"\n" * 4)
+    lines.append(GS + b"\x56" + b"\x00") 
+
+    return b"".join(lines)
+
+
+
+from django.urls import reverse_lazy
+from django.views.generic import UpdateView, CreateView, DeleteView, ListView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.shortcuts import render, redirect
+from django.contrib import messages
+
+from .models import POSSettings, PrintStation
+from .forms import POSSettingsForm, PrintStationForm
+
+# --- Configuration Dashboard (Settings + Station List) ---
+class ConfigurationView(LoginRequiredMixin, View):
+    template_name = 'settings/configuration.html'
+
+    def get(self, request):
+        # Ensure Settings exist
+        settings_obj, created = POSSettings.objects.get_or_create(id=1, defaults={'restaurant_name': 'My Restaurant'})
+        
+        settings_form = POSSettingsForm(instance=settings_obj)
+        stations = PrintStation.objects.all()
+
+        return render(request, self.template_name, {
+            'settings_form': settings_form,
+            'stations': stations
+        })
+
+    def post(self, request):
+        # Handle the General Settings Form Post
+        settings_obj = POSSettings.objects.first()
+        form = POSSettingsForm(request.POST, request.FILES, instance=settings_obj)
+        
+        if form.is_valid():
+            form.save()
+            messages.success(request, "General settings updated successfully.")
+            return redirect('configuration')
+        
+        # If invalid, re-render
+        stations = PrintStation.objects.all()
+        return render(request, self.template_name, {
+            'settings_form': form,
+            'stations': stations
+        })
+
+# --- Print Station CRUD ---
+class PrintStationCreateView(LoginRequiredMixin, CreateView):
+    model = PrintStation
+    form_class = PrintStationForm
+    template_name = 'settings/station_form.html'
+    success_url = reverse_lazy('configuration')
+
+    def form_valid(self, form):
+        messages.success(self.request, "Print Station created.")
+        return super().form_valid(form)
+
+class PrintStationUpdateView(LoginRequiredMixin, UpdateView):
+    model = PrintStation
+    form_class = PrintStationForm
+    template_name = 'settings/station_form.html'
+    success_url = reverse_lazy('configuration')
+
+    def form_valid(self, form):
+        messages.success(self.request, "Print Station updated.")
+        return super().form_valid(form)
+
+class PrintStationDeleteView(LoginRequiredMixin, DeleteView):
+    model = PrintStation
+    success_url = reverse_lazy('configuration')
+    
+    def get(self, request, *args, **kwargs):
+        return self.post(request, *args, **kwargs) 

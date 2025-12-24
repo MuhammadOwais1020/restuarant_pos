@@ -2,11 +2,17 @@ from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
-# core/views.py  (near the top of your file)
 from django.db.models import Max
 from django.utils import timezone
 from django.db import IntegrityError, transaction
 import logging
+
+from django.db import models
+from django.db.models import Max
+from django.conf import settings
+from django.utils import timezone
+import datetime
+
 logger = logging.getLogger(__name__)
 
 # ---------- User & Roles (unchanged) ----------
@@ -34,6 +40,20 @@ class Unit(models.Model):
     def __str__(self):
         return self.symbol
 
+
+class PrintStation(models.Model):
+    name = models.CharField(max_length=100, unique=True, help_text="e.g. Main Kitchen, BBQ Section, Bar")
+    printer_name = models.CharField(max_length=200, blank=True, null=True, help_text="Windows Printer Name (optional)")
+    
+    # Feature: Separate Token Slip
+    print_separate_slip = models.BooleanField(default=True, help_text="If True, items for this station print on a separate paper slip.")
+    
+    # Feature: Separate Counting Sequence (1, 2, 3...)
+    use_separate_sequence = models.BooleanField(default=False, help_text="If True, this station has its own Token #1, #2... independent of Main Kitchen.")
+
+    def __str__(self):
+        return self.name
+    
 
 class RawMaterialUnitConversion(models.Model):
     raw_material = models.ForeignKey('RawMaterial', on_delete=models.CASCADE, related_name='conversions')
@@ -63,32 +83,27 @@ class Waiter(models.Model):
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    show_in_orders = models.BooleanField(
-        default=True,
-        help_text="If false, this category will be hidden in the order‐taking UI."
-    )
+    show_in_orders = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     rank = models.IntegerField(null=True, blank=True)
+    
+    # Default station for items in this category
+    default_station = models.ForeignKey(PrintStation, on_delete=models.SET_NULL, null=True, blank=True, related_name="categories")
 
     class Meta:
         verbose_name_plural = "Categories"
 
     def __str__(self):
         return self.name
-
+    
 
 class MenuItem(models.Model):
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name='items')
     name = models.CharField(max_length=150)
     description = models.TextField(blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    cost_price    = models.DecimalField(
-                       max_digits=10,
-                       decimal_places=2,
-                       default=0,
-                       help_text="Auto‑calculated from recipe"
-    )
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     food_panda_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     is_available = models.BooleanField(default=True)
     image = models.ImageField(upload_to='menu_items/', blank=True, null=True)
@@ -96,8 +111,19 @@ class MenuItem(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     rank = models.IntegerField(null=True, blank=True)
 
+    # Allow overriding station per item
+    station = models.ForeignKey(PrintStation, on_delete=models.SET_NULL, null=True, blank=True, related_name="menu_items")
+
     def __str__(self):
         return f"{self.name} – {self.category.name}"
+
+    def get_effective_station(self):
+        """Returns item specific station, or falls back to category station."""
+        if self.station:
+            return self.station
+        if self.category.default_station:
+            return self.category.default_station
+        return None
 
 
 # ---------- Deals (New) ----------
@@ -195,6 +221,12 @@ class Order(models.Model):
     
     def save(self, *args, **kwargs):
         import time, random
+        from django.db import IntegrityError, transaction
+        from django.utils import timezone
+        
+        # Import the new utilities for dynamic timing and tokens
+        # Ensure core/utils.py exists with the code provided in the previous step
+        from .utils import get_business_date, get_next_token_number
 
         logger.debug(f"Order save started for {self.number} at {timezone.now()}")
 
@@ -204,18 +236,9 @@ class Order(models.Model):
 
         # Only auto-generate if missing
         if not self.number:
-            ref = timezone.localtime(self.created_at)
-
-            # Business day: noon -> next noon
-            noon_today = ref.replace(hour=12, minute=0, second=0, microsecond=0)
-            if ref >= noon_today:
-                window_start = noon_today
-                window_end = noon_today + timezone.timedelta(days=1)
-                business_date = ref.date()
-            else:
-                window_start = noon_today - timezone.timedelta(days=1)
-                window_end = noon_today
-                business_date = (ref - timezone.timedelta(days=1)).date()
+            # === CHANGED: Use dynamic business date from settings ===
+            # This replaces the hardcoded "noon_today" logic to support any start time (e.g. 6AM)
+            business_date = get_business_date(self.created_at)
 
             prefix = f"ORD{business_date:%Y%m%d}"
 
@@ -248,26 +271,10 @@ class Order(models.Model):
 
                         # ── TOKEN: only if one wasn't pre-supplied (tables pass session token) ──
                         if not self.token_number:
-                            # Compute next token from both Orders and TableSessions in the same noon→noon window
-                            last_order_token = (
-                                Order.objects
-                                .filter(
-                                    created_at__gte=window_start,
-                                    created_at__lt=window_end,
-                                    token_number__isnull=False,
-                                )
-                                .aggregate(m=Max('token_number'))['m'] or 0
-                            )
-                            last_session_token = (
-                                TableSession.objects
-                                .filter(
-                                    updated_at__gte=window_start,
-                                    updated_at__lt=window_end,
-                                    token_number__isnull=False,
-                                )
-                                .aggregate(m=Max('token_number'))['m'] or 0
-                            )
-                            self.token_number = max(last_order_token, last_session_token) + 1
+                            # === CHANGED: Use the centralized token utility ===
+                            # This ensures it respects the dynamic day start time and global sequence
+                            # station=None means it grabs the "Global/Main" token number
+                            self.token_number = get_next_token_number(station=None)
                             
                         logger.debug(f"Attempt {attempt}: number={self.number}, token={self.token_number}")
                         super().save(*args, **kwargs)
@@ -392,8 +399,11 @@ class DiscountRule(models.Model):
 class POSSettings(models.Model):
     restaurant_name = models.CharField(max_length=200)
     logo = models.ImageField(upload_to='settings/', blank=True, null=True)
-    theme_color = models.CharField(max_length=7, default='#ff5722',
-                                   help_text="Hex color code (e.g. #ff5722)")
+    theme_color = models.CharField(max_length=7, default='#ff5722')
+    
+    # Feature: Configurable Day Start Time
+    start_of_day_time = models.TimeField(default=datetime.time(6, 0), help_text="The time a new business day starts (e.g., 06:00 AM or 12:00 PM). Token numbers reset at this time.")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1128,12 +1138,21 @@ from django.db import models, transaction
 from django.utils import timezone
 
 class TokenSequence(models.Model):
-    """One row per business day (noon→noon) for token allocation."""
-    business_date = models.DateField(unique=True)
+    """
+    Tracks the last token number for a specific business date.
+    Optionally tracks per PrintStation if they need separate sequencing.
+    """
+    business_date = models.DateField(db_index=True)
+    station = models.ForeignKey(PrintStation, on_delete=models.CASCADE, null=True, blank=True, help_text="Null means Global/Main sequence")
     last = models.PositiveIntegerField(default=0)
 
+    class Meta:
+        # Unique constraint: One counter per date per station (or one global counter per date)
+        unique_together = ('business_date', 'station')
+
     def __str__(self):
-        return f"{self.business_date} → {self.last}"
+        st_name = self.station.name if self.station else "Global"
+        return f"{self.business_date} [{st_name}] -> {self.last}"
 
 def business_date_for(dt):
     ref = timezone.localtime(dt)

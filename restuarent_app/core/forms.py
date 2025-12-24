@@ -205,3 +205,35 @@ VoucherItemFormSet = inlineformset_factory(
     KitchenVoucher, KitchenVoucherItem,
     form=KitchenVoucherItemForm, extra=1, can_delete=True, min_num=1, validate_min=True
 )
+
+from django import forms
+from .models import POSSettings, PrintStation
+
+class POSSettingsForm(forms.ModelForm):
+    class Meta:
+        model = POSSettings
+        fields = ['restaurant_name', 'start_of_day_time', 'logo', 'theme_color']
+        widgets = {
+            'start_of_day_time': forms.TimeInput(attrs={'type': 'time', 'class': 'form-control'}),
+            'restaurant_name': forms.TextInput(attrs={'class': 'form-control'}),
+            'theme_color': forms.TextInput(attrs={'type': 'color', 'class': 'form-control form-control-color'}),
+            'logo': forms.FileInput(attrs={'class': 'form-control'}),
+        }
+        labels = {
+            'start_of_day_time': 'Business Day Start Time (Token Reset Time)'
+        }
+
+class PrintStationForm(forms.ModelForm):
+    class Meta:
+        model = PrintStation
+        fields = ['name', 'printer_name', 'print_separate_slip', 'use_separate_sequence']
+        widgets = {
+            'name': forms.TextInput(attrs={'class': 'form-control'}),
+            'printer_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. EPSON TM-T82'}),
+            'print_separate_slip': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'use_separate_sequence': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+        help_texts = {
+            'print_separate_slip': 'If checked, items for this station get their own paper slip.',
+            'use_separate_sequence': 'If checked, this station counts tokens 1, 2, 3 independently from the Main Kitchen.'
+        }

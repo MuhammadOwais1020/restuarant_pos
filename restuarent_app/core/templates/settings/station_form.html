@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{% block title %}Manage Station{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center mt-5">
+    <div class="card shadow" style="width: 500px;">
+        <div class="card-header bg-white">
+            <h5 class="mb-0">
+                {% if object %}Edit{% else %}Add{% endif %} Print Station
+            </h5>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                
+                <div class="mb-3">
+                    <label class="form-label">Station Name</label>
+                    {{ form.name }}
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Printer Name (Windows)</label>
+                    {{ form.printer_name }}
+                    <div class="form-text">Name of the shared printer on this PC.</div>
+                </div>
+
+                <div class="mb-3 form-check form-switch">
+                    {{ form.print_separate_slip }}
+                    <label class="form-check-label fw-bold">Print Separate Slip</label>
+                    <div class="form-text small">Items belonging to this station will be cut on a separate paper.</div>
+                </div>
+
+                <div class="mb-3 form-check form-switch">
+                    {{ form.use_separate_sequence }}
+                    <label class="form-check-label fw-bold">Use Separate Token Sequence</label>
+                    <div class="form-text small">Generate unique token numbers (1, 2, 3) specific to this station.</div>
+                </div>
+
+                <div class="d-flex justify-content-between mt-4">
+                    <a href="{% url 'configuration' %}" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-success px-4">Save Station</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -346,6 +346,9 @@
       <a href="{% url 'order_list' %}" class="{% if request.resolver_match.url_name == 'order_list' %}active{% endif %}"> <i class="fa fa-receipt"></i> Orders </a>
       <a href="/tables/" class="{% if request.resolver_match.url_name == 'table_list' %}active{% endif %}"> <i class="fa fa-table"></i> Tables </a>
       <a href="/reports/" class="{% if request.resolver_match.url_name == 'reports' %}active{% endif %}"> <i class="fa fa-chart-line"></i> Reports </a>
+      <a href="{% url 'configuration' %}" class="{% if request.resolver_match.url_name == 'configuration' %}active{% endif %}"> 
+          <i class="fa fa-cog"></i> Settings 
+      </a>
     </nav>
 
     <main>{% block content %}{% endblock %}</main>
