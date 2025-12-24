@@ -3174,3 +3174,7 @@ class PrintStationDeleteView(LoginRequiredMixin, DeleteView):
     
     def get(self, request, *args, **kwargs):
         return self.post(request, *args, **kwargs) 
+    
+
+
+#modifications v3 
