@@ -1,7 +1,7 @@
 # core/printing.py
 import win32print
 
-PRINTER_NAME = "KPOS_80 Printer"  # ← exactly the name you see under Control Panel → Devices and Printers
+PRINTER_NAME = "POS80 Printer"  # ← exactly the name you see under Control Panel → Devices and Printers
 
 def send_to_printer(raw_bytes: bytes) -> None:
     """

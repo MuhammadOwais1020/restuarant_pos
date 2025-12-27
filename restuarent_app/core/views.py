@@ -689,27 +689,37 @@ class OrderCreateView(LoginRequiredMixin, View):
 
                     # --- PRINT EACH GROUP ---
                     for key, group_items in grouped_items.items():
+                        
+                        # Defaults
+                        target_printer = None 
+                        token_num = order.token_number
+
                         # Config for this station
                         if key == 'Global':
                             header_label = "KITCHEN TOKEN"
-                            token_num = order.token_number
                         else:
                             station_obj = key
                             header_label = f"{station_obj.name.upper()} TOKEN"
+                            
+                            # Get printer name
+                            if station_obj.printer_name:
+                                target_printer = station_obj.printer_name
+
+                            # Get sequence
                             if station_obj.use_separate_sequence:
                                 token_num = get_next_token_number(station=station_obj)
-                            else:
-                                token_num = order.token_number
 
                         # Build Bytes
-                        token_data = build_dynamic_token_bytes(
-                            order,  # Pass order object (has date, waiter, etc)
-                            group_items,
-                            header_label,
-                            token_num
+                        # We use the existing helper but ensure it works with Orders
+                        from .views import build_token_bytes_for_items
+                        token_data = build_token_bytes_for_items(
+                            order, 
+                            group_items, 
+                            header_label
                         )
-                        # Send
-                        send_to_printer(token_data)
+                        
+                        # Send to printer WITH the specific name
+                        send_to_printer(token_data, printer_name=target_printer)
 
                     # Mark items as printed using QuerySet update (Fast)
                     # (Filter by ID to be safe)
@@ -718,11 +728,12 @@ class OrderCreateView(LoginRequiredMixin, View):
 
                 # --- BILL PRINTING ---
                 if bill_enabled:
+                    # Pass None to use default printer defined in printing.py
                     bill_data_cust = build_bill_bytes(order, is_food_panda, "Customer Copy")
-                    send_to_printer(bill_data_cust)
+                    send_to_printer(bill_data_cust, printer_name=None)
                     
                     bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
-                    send_to_printer(bill_data_office)
+                    send_to_printer(bill_data_office, printer_name=None)
 
                 # --- RELEASE TABLE (If paid) ---
                 if table_id and status_value == "paid":
@@ -739,7 +750,6 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         return JsonResponse({"message": "Order Created", "order_id": order.id})
     
-
 import json
 from django.shortcuts      import render, get_object_or_404
 from django.http           import JsonResponse, HttpResponseBadRequest
@@ -2945,9 +2955,8 @@ class TablePrintTokenView(View):
     def post(self, request, table_id):
         session = get_object_or_404(TableSession, table_id=table_id)
         
-        # 1. Ensure TableSession has a global token number (for reference)
+        # 1. Ensure TableSession has a global token number
         if session.token_number is None:
-            # station=None gets the global sequence
             session.token_number = get_next_token_number(station=None)
             session.save(update_fields=['token_number'])
 
@@ -2960,7 +2969,6 @@ class TablePrintTokenView(View):
             return JsonResponse({'status': 'nothing_to_print'})
 
         # 3. Group items by PrintStation
-        #    Key: Station object (or 'Global' string for default), Value: List of (ti, delta)
         grouped_items = {}
 
         for ti, d in items_with_delta:
@@ -2968,16 +2976,13 @@ class TablePrintTokenView(View):
             if ti.source_type == 'menu':
                 try:
                     mi = MenuItem.objects.get(pk=ti.source_id)
-                    # Use the helper method we added to MenuItem to find the station
                     station = mi.get_effective_station()
                 except MenuItem.DoesNotExist:
                     pass
             elif ti.source_type == 'deal':
-                # Logic for deals: currently they default to Global (Main Kitchen)
-                # You can add logic here if Deals need specific stations
+                # Add logic here if Deals have stations
                 pass 
 
-            # If no station is found, group under "Global"
             key = station if station else 'Global'
             
             if key not in grouped_items:
@@ -2987,24 +2992,26 @@ class TablePrintTokenView(View):
         # 4. Process each group and print
         for key, group_items in grouped_items.items():
             
-            # Determine Header and Token Number for this specific group
+            # --- Defaults ---
+            target_printer = None # Will use default in printing.py
+            token_num = session.token_number
+
             if key == 'Global':
-                # Default behavior
                 header_label = "KITCHEN TOKEN"
-                token_num = session.token_number # Use the session's global token
             else:
-                # It is a specific PrintStation configuration
+                # It is a specific PrintStation object
                 station_obj = key
                 header_label = f"{station_obj.name.upper()} TOKEN"
                 
-                # Check if this station needs its own separate counting sequence (1, 2, 3...)
+                # Get the specific printer name from the DB
+                if station_obj.printer_name:
+                    target_printer = station_obj.printer_name
+                
+                # Check separate sequence logic
                 if station_obj.use_separate_sequence:
                     token_num = get_next_token_number(station=station_obj)
-                else:
-                    # Otherwise share the main token number
-                    token_num = session.token_number
 
-            # Build the print bytes using the new dynamic helper
+            # Build Bytes
             payload = build_dynamic_token_bytes(
                 session, 
                 group_items, 
@@ -3012,14 +3019,15 @@ class TablePrintTokenView(View):
                 token_num
             )
             
-            # Send to printer
-            print(f"Printing {header_label} with Token {token_num}")
+            # Send to printer WITH the specific name
+            print(f"Printing {header_label} to {target_printer or 'Default'}")
             try:
-                send_to_printer(payload)
+                # CHANGED: Passing target_printer argument
+                send_to_printer(payload, printer_name=target_printer)
             except Exception as e:
                 print(f"Printer Error for {header_label}: {e}")
 
-        # 5. Update printed quantities for all items processed
+        # 5. Update printed quantities
         for ti, _ in items_with_delta:
             ti.printed_quantity = ti.quantity
             ti.save(update_fields=['printed_quantity'])
@@ -3028,6 +3036,7 @@ class TablePrintTokenView(View):
             'status': 'printed', 
             'count': len(items_with_delta)
         })
+    
 
 
 def build_dynamic_token_bytes(session, items_with_delta, header_label, token_number):
