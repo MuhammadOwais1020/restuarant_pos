@@ -975,7 +975,7 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
     # ─── Restaurant name, larger/bold ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")   # center alignment
     # lines.append(esc + b"\x21" + b"\x30")   # double height & width
-    lines.append(b"Cafe Kunj\n")
+    lines.append(b"NEW MARHABA\n")
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
 
@@ -1142,6 +1142,7 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
     lines.append(esc + b"\x45" + b"\x00")   # bold off
 
     # ─── Footer / Branding (professional signature) ───────────────────────
+    lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"-" * 40 + b"\n\n")
     lines.append(b"Home Delivery Contact:  0310 8000667\n\n")
     lines.append(esc + b"\x61" + b"\x00")   # left align
@@ -1414,7 +1415,7 @@ def build_token_bytes_for_deltas(order, items_with_delta):
     
     # ─── Restaurant name, larger/bold ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")   # center alignment
-    lines.append(b"Cafe Kunj\n")
+    lines.append(b"NEW MARHABA\n")
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
 
@@ -2760,7 +2761,7 @@ def build_token_bytes_for_items(order, items, header_label):
     # 1) Header
     lines.append(ESC + b"\x61" + b"\x01")   # center alignment
     # lines.append(esc + b"\x21" + b"\x30")   # double height & width
-    lines.append(b"Cafe Kunj\n")
+    lines.append(b"NEW MARHABA\n")
     lines.append(ESC + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
 
