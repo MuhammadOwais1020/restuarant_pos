@@ -521,8 +521,8 @@ class OrderCreateView(LoginRequiredMixin, View):
         action = data.get("action", "create")
         table_id = data.get("table_id")
         
-        is_food_panda = data.get("source") # 'food_panda' or 'walk_in'
-        is_home_delivery = data.get("isHomeDelivery") # 'yes' or 'no'
+        is_food_panda = data.get("source") 
+        is_home_delivery = data.get("isHomeDelivery") 
         
         waiter_id = data.get("waiter_id") or None
         mobile_no  = data.get("mobileNo") or None
@@ -538,23 +538,26 @@ class OrderCreateView(LoginRequiredMixin, View):
                 return JsonResponse({"error": "Invalid waiter_id"}, status=400)
 
         my_datetime = timezone.localtime(timezone.now())
+        
+        # --- FIXED LOGIC START ---
+        # Default status based on action
         status_value = "paid" if action == "paid" else "pending"
         
-        # If Table or Delivery, order stays pending until explicit payment/close
-        if table_id or is_home_delivery == "yes":
+        # Only force 'pending' for Tables/Delivery IF the user did NOT click Paid.
+        # This allows you to close/pay a table order immediately.
+        if (table_id or is_home_delivery == "yes") and action != "paid":
             status_value = "pending"
+        # --- FIXED LOGIC END ---
 
         session = None
         order = None
         session_token = None
 
-        # === 1. ORDER CREATION (Optimized) ===
+        # === 1. ORDER CREATION ===
         if table_id:
-            # Table Order: Use Transaction to safely claim session
             with transaction.atomic():
                 session = TableSession.objects.select_for_update().get(table_id=table_id)
                 
-                # Ensure Session has a token
                 if session.token_number is None:
                     session.token_number = get_next_token_number(station=None)
                     session.save(update_fields=['token_number'])
@@ -575,20 +578,22 @@ class OrderCreateView(LoginRequiredMixin, View):
                     customer_name=customer_name,
                     customer_address=customer_address,
                     created_at=my_datetime,
-                    token_number=session_token, # Use session token
+                    token_number=session_token,
                 )
 
-                # Reset Session for next customer
+                # Reset Session
                 session.token_number = None
                 session.waiter = None
                 session.save(update_fields=['token_number', 'waiter'])
                 
-                # Mark Table Occupied
-                if status_value != "paid":
+                # Update Table Occupancy
+                if status_value == "paid":
+                    Table.objects.filter(pk=table_id).update(is_occupied=False)
+                else:
                     Table.objects.filter(pk=table_id).update(is_occupied=True)
 
         else:
-            # Walk-in / Delivery: Generate new token
+            # Walk-in / Delivery
             token_number = get_next_token_number(station=None)
             
             order = Order.objects.create(
@@ -608,15 +613,12 @@ class OrderCreateView(LoginRequiredMixin, View):
                 token_number=token_number,
             )
 
-        # === 2. ITEMS BULK CREATION (Optimized) ===
+        # === 2. ITEMS BULK CREATION ===
         total_price = Decimal('0')
         order_items_to_create = []
         
-        # Prepare list of OrderItem objects
         for it in items_data:
             qty = int(it.get("quantity", 1))
-            
-            # Determine Price
             unit_price = Decimal(str(it.get("unit_price", 0)))
             
             line_total = unit_price * qty
@@ -628,7 +630,7 @@ class OrderCreateView(LoginRequiredMixin, View):
                 order=order,
                 quantity=qty,
                 unit_price=unit_price,
-                token_printed=False # Default
+                token_printed=False
             )
             
             if item_type == "menu":
@@ -638,95 +640,65 @@ class OrderCreateView(LoginRequiredMixin, View):
             
             order_items_to_create.append(order_item)
 
-        # Bulk Insert
         if order_items_to_create:
             OrderItem.objects.bulk_create(order_items_to_create)
 
-        # === 3. AUTO-PAYMENT (Walk-in Cash) ===
-        if not table_id and is_home_delivery == 'no':
-            Payment.objects.create(
+        # === 3. AUTO-PAYMENT ===
+        # If Walk-in and NOT Home Delivery, create payment immediately if not table
+        # (Or if it's Table/Delivery but status is PAID, we record payment)
+        if status_value == 'paid': 
+             Payment.objects.create(
                 order=order,
                 amount=total_price,
-                method="cash",
+                method="cash", # You might want to pass this from frontend too
                 details=""
             )
 
-        # === 4. PRINTING LOGIC (Dynamic Station Routing) ===
-        # This part runs for Walk-in / Delivery immediately. 
+        # === 4. PRINTING LOGIC ===
         if status_value == "paid" or status_value == "pending":
             try:
                 ps = PrintStatus.objects.first()
-                bill_enabled  = ps.bill  if ps else False
-                token_enabled = ps.token if ps else False
+                # Default to True if no record exists, just to be safe for debugging
+                bill_enabled  = ps.bill  if ps else True 
+                token_enabled = ps.token if ps else True
 
-                # --- TOKEN PRINTING ---
-                # Only print KITCHEN TOKENS here if it's NOT a table order
-                # (Table orders usually print tokens incrementally via the table view)
+                # --- TOKEN ---
                 if token_enabled and not table_id:
-                    
-                    # Fetch freshly created items with relations needed for routing
                     new_items = list(Order.objects.get(pk=order.id).items.all())
                     
-                    # --- DYNAMIC GROUPING BY STATION ---
                     grouped_items = {}
-                    
                     for oi in new_items:
                         station = None
                         if oi.menu_item:
                             station = oi.menu_item.get_effective_station()
-                        
-                        # Use Station Object or 'Global' key
                         key = station if station else 'Global'
-                        
-                        if key not in grouped_items:
-                            grouped_items[key] = []
+                        if key not in grouped_items: grouped_items[key] = []
                         grouped_items[key].append(oi)
 
-                    # --- PRINT EACH GROUP ---
                     for key, group_items in grouped_items.items():
-                        
-                        # Explicitly default to your specific printer
-                        target_printer = "POS80 Printer"
+                        target_printer = "POS80 Printer" # Default
                         token_num = order.token_number
 
-                        # Config for this station
                         if key == 'Global':
                             header_label = "KITCHEN TOKEN"
                         else:
                             station_obj = key
                             header_label = f"{station_obj.name.upper()} TOKEN"
-                            
-                            # If station has a specific printer set, use it. 
-                            # Otherwise keep "POS80 Printer"
                             if station_obj.printer_name:
                                 target_printer = station_obj.printer_name
-
-                            # Get sequence
                             if station_obj.use_separate_sequence:
                                 token_num = get_next_token_number(station=station_obj)
 
-                        # Build Bytes
-                        # Ensure build_token_bytes_for_items is available
-                        # You might need to import it at the top of views.py if not already there
-                        from .views import build_token_bytes_for_items 
-                        
-                        token_data = build_token_bytes_for_items(
-                            order, 
-                            group_items, 
-                            header_label
-                        )
-                        
-                        # Send to printer
-                        print(f"Sending Token to: {target_printer}")
+                        from .views import build_token_bytes_for_items
+                        token_data = build_token_bytes_for_items(order, group_items, header_label)
                         send_to_printer(token_data, printer_name=target_printer)
 
-                    # Mark items as printed
                     item_ids = [i.id for i in new_items]
                     OrderItem.objects.filter(id__in=item_ids).update(token_printed=True)
 
-                # --- BILL PRINTING ---
+                # --- BILL ---
                 if bill_enabled:
-                    # Force "POS80 Printer" for bills
+                    # Explicitly use your printer
                     bill_printer = "POS80 Printer"
                     
                     bill_data_cust = build_bill_bytes(order, is_food_panda, "Customer Copy")
@@ -735,12 +707,7 @@ class OrderCreateView(LoginRequiredMixin, View):
                     bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
                     send_to_printer(bill_data_office, printer_name=bill_printer)
 
-                # --- RELEASE TABLE (If paid) ---
-                if table_id and status_value == "paid":
-                    Table.objects.filter(pk=table_id).update(is_occupied=False)
-
             except Exception as e:
-                # Log error but don't crash the response; Order is already created
                 print(f"Printing Error: {e}")
                 return JsonResponse({
                     "message": "Order Created (Printing Failed)", 
@@ -749,6 +716,7 @@ class OrderCreateView(LoginRequiredMixin, View):
                 }, status=200)
 
         return JsonResponse({"message": "Order Created", "order_id": order.id})
+    
     
 import json
 from django.shortcuts      import render, get_object_or_404
