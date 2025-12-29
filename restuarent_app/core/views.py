@@ -616,9 +616,7 @@ class OrderCreateView(LoginRequiredMixin, View):
         for it in items_data:
             qty = int(it.get("quantity", 1))
             
-            # Determine Price (Server-Side Validation recommended here)
-            # For speed, trusting client's unit_price OR re-fetching (safer)
-            # Here we trust the provided logic but ensure Decimal conversion
+            # Determine Price
             unit_price = Decimal(str(it.get("unit_price", 0)))
             
             line_total = unit_price * qty
@@ -640,7 +638,7 @@ class OrderCreateView(LoginRequiredMixin, View):
             
             order_items_to_create.append(order_item)
 
-        # Bulk Insert (Much Faster)
+        # Bulk Insert
         if order_items_to_create:
             OrderItem.objects.bulk_create(order_items_to_create)
 
@@ -655,15 +653,13 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         # === 4. PRINTING LOGIC (Dynamic Station Routing) ===
         # This part runs for Walk-in / Delivery immediately. 
-        # Table orders print via the separate TablePrintTokenView usually,
-        # but if this View is handling final "Paid" or direct walk-in print:
-        
         if status_value == "paid" or status_value == "pending":
             try:
                 ps = PrintStatus.objects.first()
                 bill_enabled  = ps.bill  if ps else False
                 token_enabled = ps.token if ps else False
 
+                # --- TOKEN PRINTING ---
                 # Only print KITCHEN TOKENS here if it's NOT a table order
                 # (Table orders usually print tokens incrementally via the table view)
                 if token_enabled and not table_id:
@@ -677,7 +673,6 @@ class OrderCreateView(LoginRequiredMixin, View):
                     for oi in new_items:
                         station = None
                         if oi.menu_item:
-                            # Use helper method on MenuItem model
                             station = oi.menu_item.get_effective_station()
                         
                         # Use Station Object or 'Global' key
@@ -689,40 +684,56 @@ class OrderCreateView(LoginRequiredMixin, View):
 
                     # --- PRINT EACH GROUP ---
                     for key, group_items in grouped_items.items():
+                        
+                        # Explicitly default to your specific printer
+                        target_printer = "POS80 Printer"
+                        token_num = order.token_number
+
                         # Config for this station
                         if key == 'Global':
                             header_label = "KITCHEN TOKEN"
-                            token_num = order.token_number
                         else:
                             station_obj = key
                             header_label = f"{station_obj.name.upper()} TOKEN"
+                            
+                            # If station has a specific printer set, use it. 
+                            # Otherwise keep "POS80 Printer"
+                            if station_obj.printer_name:
+                                target_printer = station_obj.printer_name
+
+                            # Get sequence
                             if station_obj.use_separate_sequence:
                                 token_num = get_next_token_number(station=station_obj)
-                            else:
-                                token_num = order.token_number
 
                         # Build Bytes
-                        token_data = build_dynamic_token_bytes(
-                            order,  # Pass order object (has date, waiter, etc)
-                            group_items,
-                            header_label,
-                            token_num
+                        # Ensure build_token_bytes_for_items is available
+                        # You might need to import it at the top of views.py if not already there
+                        from .views import build_token_bytes_for_items 
+                        
+                        token_data = build_token_bytes_for_items(
+                            order, 
+                            group_items, 
+                            header_label
                         )
-                        # Send
-                        send_to_printer(token_data)
+                        
+                        # Send to printer
+                        print(f"Sending Token to: {target_printer}")
+                        send_to_printer(token_data, printer_name=target_printer)
 
-                    # Mark items as printed using QuerySet update (Fast)
-                    # (Filter by ID to be safe)
+                    # Mark items as printed
                     item_ids = [i.id for i in new_items]
                     OrderItem.objects.filter(id__in=item_ids).update(token_printed=True)
 
                 # --- BILL PRINTING ---
                 if bill_enabled:
+                    # Force "POS80 Printer" for bills
+                    bill_printer = "POS80 Printer"
+                    
                     bill_data_cust = build_bill_bytes(order, is_food_panda, "Customer Copy")
-                    send_to_printer(bill_data_cust)
+                    send_to_printer(bill_data_cust, printer_name=bill_printer)
                     
                     bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
-                    send_to_printer(bill_data_office)
+                    send_to_printer(bill_data_office, printer_name=bill_printer)
 
                 # --- RELEASE TABLE (If paid) ---
                 if table_id and status_value == "paid":
@@ -735,11 +746,10 @@ class OrderCreateView(LoginRequiredMixin, View):
                     "message": "Order Created (Printing Failed)", 
                     "order_id": order.id,
                     "error": str(e)
-                }, status=200) # Return 200 so UI doesn't think order failed
+                }, status=200)
 
         return JsonResponse({"message": "Order Created", "order_id": order.id})
     
-
 import json
 from django.shortcuts      import render, get_object_or_404
 from django.http           import JsonResponse, HttpResponseBadRequest

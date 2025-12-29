@@ -63,6 +63,15 @@
 {% block content %}
 <section class="dashboard-container">
   <main class="dashboard-grid">
+      <!-- Orders Card -->
+  <a href="{% url 'order_create' %}" class="card">
+    <i class="fa fa-receipt fa-3x"></i>
+    <h3>New Order</h3>
+  </a>
+  <a href="{% url 'order_list' %}" class="card">
+    <i class="fa fa-receipt fa-3x"></i>
+    <h3>Order List</h3>
+  </a>
   <!-- Categories Card -->
   <a href="{% url 'category_list' %}" class="card">
     <i class="fa fa-folder fa-3x"></i>
@@ -79,12 +88,6 @@
   <a href="{% url 'deal_list' %}" class="card">
     <i class="fa fa-tag fa-3x"></i>
     <h3>Deals</h3>
-  </a>
-
-  <!-- Orders Card -->
-  <a href="{% url 'order_list' %}" class="card">
-    <i class="fa fa-receipt fa-3x"></i>
-    <h3>Orders</h3>
   </a>
 
   <!-- Tables Card -->
