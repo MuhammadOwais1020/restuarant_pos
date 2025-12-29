@@ -1646,14 +1646,14 @@ searchInput.addEventListener('input', () => {
           const customerName = document.getElementById("customer_name").value || "";
     
           if (selectedTableId) {
-            if (waiter != ""){
+            if (true){
                 // persist to server buffer
                 saveTableItem(selectedTableId, type, id, price, 1);
             }else{
                 showAlert('error', 'Please select the waiter first, Thank You!');
             }
           } else {
-            if(mobileNo != "" && customerAddress != "" && customerName != ""){
+            if(true){
               const name = card.querySelector('span').innerText;
               // take-away or home-delivery mode: just in memory
               addItemToOrder(type, id, name, price);
