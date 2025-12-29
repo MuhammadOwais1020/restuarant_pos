@@ -545,8 +545,8 @@ class OrderCreateView(LoginRequiredMixin, View):
         
         # Only force 'pending' for Tables/Delivery IF the user did NOT click Paid.
         # This allows you to close/pay a table order immediately.
-        if (table_id or is_home_delivery == "yes") and action != "paid":
-            status_value = "pending"
+        # if (table_id or is_home_delivery == "yes") and action != "paid":
+        #     status_value = "pending"
         # --- FIXED LOGIC END ---
 
         session = None
@@ -701,11 +701,11 @@ class OrderCreateView(LoginRequiredMixin, View):
                     # Explicitly use your printer
                     bill_printer = "POS80 Printer"
                     
-                    bill_data_cust = build_bill_bytes(order, is_food_panda, "Customer Copy")
+                    bill_data_cust = build_bill_bytes(order, is_food_panda, "")
                     send_to_printer(bill_data_cust, printer_name=bill_printer)
                     
-                    bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
-                    send_to_printer(bill_data_office, printer_name=bill_printer)
+                    # bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
+                    # send_to_printer(bill_data_office, printer_name=bill_printer)
 
             except Exception as e:
                 print(f"Printing Error: {e}")
@@ -717,7 +717,7 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         return JsonResponse({"message": "Order Created", "order_id": order.id})
     
-    
+
 import json
 from django.shortcuts      import render, get_object_or_404
 from django.http           import JsonResponse, HttpResponseBadRequest
@@ -1045,8 +1045,9 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
     # ─── Restaurant name, double size ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")
     lines.append(esc + b"\x21" + b"\x30")
-    lines.append(b"Cafe Kunj\n")
+    lines.append(b"NEW MARHABA\n")
     lines.append(esc + b"\x21" + b"\x00")
+    lines.append(b"0305 3969040\n\n")
     lines.append(b"\n")
     
     
@@ -1136,13 +1137,13 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
     lines.append(b"Discount : " + f"{discount_f:.2f}".encode("ascii") + b"\n")
     lines.append(b"Tax (" + f"{tax_perc_f:.0f}".encode("ascii") + b"%) : " + f"{tax_amt_f:.2f}".encode("ascii") + b"\n")
     lines.append(b"Service : " + f"{service_f:.2f}".encode("ascii") + b"\n")
-    lines.append(esc + b"\x45" + b"\x01")   # bold on for grand total
+    lines.append(esc + b"\x21" + b"\x20")   # ESC ! 0x20 → double‐width
     lines.append(b"Grand Total: " + f"{grand_f:.2f}".encode("ascii") + b"\n\n")
     lines.append(esc + b"\x45" + b"\x00")   # bold off
 
     # ─── Footer / Branding (professional signature) ───────────────────────
     lines.append(b"-" * 40 + b"\n\n")
-    lines.append(b"Home Delivery Contact: +92 311 1227749\n\n")
+    lines.append(b"Home Delivery Contact:  0310 8000667\n\n")
     lines.append(esc + b"\x61" + b"\x00")   # left align
     lines.append(b"-" * 40 + b"\n\n")
     lines.append(esc + b"\x61" + b"\x01")   # center
