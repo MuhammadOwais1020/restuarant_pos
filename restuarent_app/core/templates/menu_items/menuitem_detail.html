@@ -5,6 +5,7 @@
 <p><strong>Category:</strong> {{ item.category.name }}</p>
 <p><strong>Price:</strong> {{ item.price }}</p>
 <p><strong>Food Panda Price:</strong> {{ item.food_panda_price|default:"0" }}</p>
+<p><strong>Weight/Quantity:</strong> {{ item.get_weight_display|default:"N/A" }}</p>
 <p><strong>Rank:</strong> {{ item.rank|default:"0" }}</p>
 <p><strong>Available:</strong> {{ item.is_available|yesno:'Yes,No' }}</p>
 <p>{{ item.description }}</p>

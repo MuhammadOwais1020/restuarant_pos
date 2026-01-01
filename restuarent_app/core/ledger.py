@@ -17,6 +17,29 @@ from .models import (
     BankAccount,
 )
 
+
+# core/ledger.py
+from datetime import date, datetime, timedelta
+from calendar import monthrange
+from decimal import Decimal
+
+from django.db.models import Sum, Q, F, Value
+from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
+from django.views.generic import TemplateView
+from django.utils import timezone
+from django.contrib.auth.mixins import LoginRequiredMixin
+
+from .models import (
+    Supplier,
+    Staff,
+    Expense,
+    PurchaseOrder,
+    BankAccount,
+    Customer,        # NEW
+    Order,           # NEW
+    PaymentReceived  # NEW
+)
 # ---------- Helpers ----------
 
 def dt_from_str(s):
@@ -43,16 +66,33 @@ def month_ends(start_date: date, end_date: date):
             m = 1
             y += 1
 
+
 def safe_net_total(po: PurchaseOrder) -> Decimal:
-    # If your model has net_total, use it; else derive from total_cost and stored percents (if any)
     val = getattr(po, "net_total", None)
     if val is not None:
         return Decimal(val)
-    # graceful fallback
+    # fallback re-calculation
     tax = Decimal(getattr(po, "tax_percent", 0) or 0)
     disc = Decimal(getattr(po, "discount_percent", 0) or 0)
     subtotal = Decimal(po.total_cost or 0)
     return (subtotal + (subtotal * tax / Decimal("100")) - (subtotal * disc / Decimal("100"))).quantize(Decimal("0.01"))
+
+def calculate_order_total(order) -> Decimal:
+    """Helper to calculate Grand Total of a customer order."""
+    # 1. Sum items
+    subtotal = sum(item.quantity * item.unit_price for item in order.items.all())
+    # 2. Apply Discount
+    discount = order.discount or Decimal(0)
+    after_disc = subtotal - discount
+    if after_disc < 0: after_disc = Decimal(0)
+    # 3. Apply Tax
+    tax_p = order.tax_percentage or Decimal(0)
+    tax_amt = (after_disc * tax_p) / Decimal(100)
+    # 4. Apply Service
+    svc = order.service_charge or Decimal(0)
+    
+    return (after_disc + tax_amt + svc).quantize(Decimal("0.01"))
+
 
 def colored_direction(amount: Decimal):
     """
@@ -72,69 +112,76 @@ class LedgerBaseView(TemplateView):
         q_from = dt_from_str(request.GET.get("from", "") or "")
         q_to = dt_from_str(request.GET.get("to", "") or "")
         from_start = request.GET.get("from_start") in ["1", "true", "True", "on"]
-
-        # defaults: from = None (start), to = today
         if not q_to:
             q_to = timezone.localdate()
         return q_from, q_to, from_start
 
-
 # ---------- Home (lists suppliers & staff with quick balances) ----------
 
-class LedgerHomeView(TemplateView):
+class LedgerHomeView(LoginRequiredMixin, TemplateView):
     template_name = "ledger/ledger_home.html"
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["suppliers"] = Supplier.objects.order_by("name")
         ctx["staff"] = Staff.objects.order_by("full_name")
+        ctx["customers"] = Customer.objects.order_by("name") # Added Customers
         return ctx
 
 
 # ---------- Supplier Ledger ----------
 
-class SupplierLedgerView(LedgerBaseView):
+class SupplierLedgerView(LoginRequiredMixin, LedgerBaseView):
     template_name = "ledger/supplier_ledger.html"
 
     def get_context_data(self, **kwargs):
-        from django.db.models import Value as V, DecimalField
-
         ctx = super().get_context_data(**kwargs)
         supplier = get_object_or_404(Supplier, pk=kwargs["pk"])
         dfrom, dto, from_start = self.parse_filters(self.request)
 
-        # Build entries
         entries = []
 
-        # Purchases (CR)
-        po_qs = PurchaseOrder.objects.filter(supplier=supplier).order_by("created_at")
-        if dfrom:
-            po_qs = po_qs.filter(created_at__date__gte=dfrom)
-        if dto:
-            po_qs = po_qs.filter(created_at__date__lte=dto)
-        for po in po_qs.select_related("supplier"):
+        # 1. Purchases (PO) -> CREDIT (We owe them)
+        # Prefetch items and raw_material to build detailed description strings
+        po_qs = (
+            PurchaseOrder.objects
+            .filter(supplier=supplier)
+            .select_related("supplier")
+            .prefetch_related("items__raw_material")
+            .order_by("created_at")
+        )
+        if dfrom: po_qs = po_qs.filter(created_at__date__gte=dfrom)
+        if dto:   po_qs = po_qs.filter(created_at__date__lte=dto)
+
+        for po in po_qs:
             nt = safe_net_total(po)
+            # Build detailed description
+            item_details = ", ".join([
+                f"{i.quantity}{i.raw_material.unit} {i.raw_material.name} @{i.unit_price}" 
+                for i in po.items.all()
+            ])
+            desc_str = f"PO #{po.id}: {item_details}" if item_details else f"PO #{po.id}"
+
             entries.append({
                 "dt": po.created_at,
-                "desc": f"PO #{po.id}",
+                "desc": desc_str,
                 "ref": po.id,
                 "dr": Decimal("0.00"),
                 "cr": nt,
             })
 
-        # Payments to supplier (DR)  — include those tied to PO or directly to supplier
+        # 2. Expenses (Payments TO Supplier) -> DEBIT (We paid them)
         pay_qs = Expense.objects.filter(
             Q(supplier=supplier) | Q(purchase_order__supplier=supplier)
         ).order_by("created_at")
-        if dfrom:
-            pay_qs = pay_qs.filter(created_at__date__gte=dfrom)
-        if dto:
-            pay_qs = pay_qs.filter(created_at__date__lte=dto)
+        if dfrom: pay_qs = pay_qs.filter(created_at__date__gte=dfrom)
+        if dto:   pay_qs = pay_qs.filter(created_at__date__lte=dto)
 
-        for e in pay_qs.select_related("purchase_order", "bank_account"):
-            label = "Payment"
-            if e.purchase_order_id:
-                label += f" for PO #{e.purchase_order_id}"
+        for e in pay_qs:
+            label = f"Payment ({e.get_category_display()})"
+            if e.description: label += f" - {e.description}"
+            if e.purchase_order_id: label += f" [Ref PO #{e.purchase_order_id}]"
+            
             entries.append({
                 "dt": getattr(e, "created_at", None) or datetime.combine(e.date, datetime.min.time()),
                 "desc": label,
@@ -143,43 +190,165 @@ class SupplierLedgerView(LedgerBaseView):
                 "cr": Decimal("0.00"),
             })
 
-        # Opening balance (if not from_start)
+        # 3. Payment Received (Refund FROM Supplier) -> CREDIT 
+        # (Treating refund as 'Reverse Payment' or 'Income' which reduces the debit side, 
+        # effectively increasing the balance we owe/offsetting the payment).
+        # Alternatively: It's Money In. Accounting: Supplier Account (Dr), Cash (Cr). 
+        # Wait, if Supplier gives money back, our liability to them DECREASES? No.
+        # Simple Logic: 
+        #   We Buy 1000 (Cr). Bal: 1000 (Owe).
+        #   We Pay 1000 (Dr). Bal: 0.
+        #   We Return Item. They give 200 Cash. 
+        #   This acts like a negative payment. So it should appear on the CREDIT side 
+        #   to balance out the cash we received.
+        recv_qs = PaymentReceived.objects.filter(supplier=supplier, party_type='supplier').order_by('created_at')
+        if dfrom: recv_qs = recv_qs.filter(date__gte=dfrom)
+        if dto:   recv_qs = recv_qs.filter(date__lte=dto)
+        
+        for r in recv_qs:
+            entries.append({
+                "dt": getattr(r, "created_at", None) or datetime.combine(r.date, datetime.min.time()),
+                "desc": f"Refund Received: {r.description}",
+                "ref": r.id,
+                "dr": Decimal("0.00"), 
+                "cr": Decimal(r.amount), # Increases 'payable' balance or offsets previous debit
+            })
+
+
+        # 4. Opening Balance Logic
         opening = Decimal("0.00")
         if not from_start and dfrom:
-            # CR before start = purchases before dfrom
-            cr_before = sum(
-                safe_net_total(po) for po in
-                PurchaseOrder.objects.filter(supplier=supplier, created_at__date__lt=dfrom)
-            ) or Decimal("0")
-            # DR before start = payments before dfrom
+            # Purchases before
+            cr_before = sum(safe_net_total(po) for po in PurchaseOrder.objects.filter(supplier=supplier, created_at__date__lt=dfrom))
+            
+            # Refunds before
+            ref_before = PaymentReceived.objects.filter(supplier=supplier, date__lt=dfrom).aggregate(s=Coalesce(Sum('amount'), Decimal('0')))['s']
+            cr_total_before = cr_before + ref_before
+
+            # Payments before
             dr_before = Decimal(Expense.objects.filter(
                 Q(supplier=supplier) | Q(purchase_order__supplier=supplier),
                 created_at__date__lt=dfrom
             ).aggregate(s=Coalesce(Sum("amount"), Decimal("0")))["s"])
-            opening = (cr_before - dr_before)
+            
+            opening = (cr_total_before - dr_before)
 
-        # Sort & running balance
+        # Sort & Running Balance
         entries.sort(key=lambda x: x["dt"] or timezone.now())
         running = opening
         for it in entries:
             running = running + it["cr"] - it["dr"]
             it["bal"] = running
 
-        color, side_label = colored_direction(running)
+        # Color: Positive = We owe them (Red), Negative = Advance (Green)
+        color = "red" if running > 0 else "green"
 
         ctx.update({
             "supplier": supplier,
             "entries": entries,
             "opening": opening,
             "closing": running,
-            "closing_color": color,   # 'red' or 'green'
+            "closing_color": color,
             "from": dfrom,
             "to": dto,
             "from_start": from_start,
         })
         return ctx
+    
 
 
+# ---------- Customer Ledger (NEW) ----------
+
+class CustomerLedgerView(LoginRequiredMixin, LedgerBaseView):
+    template_name = "ledger/customer_ledger.html"
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        customer = get_object_or_404(Customer, pk=kwargs["pk"])
+        dfrom, dto, from_start = self.parse_filters(self.request)
+
+        entries = []
+
+        # 1. Orders (Sales) -> DEBIT (They owe us)
+        # Filter: Orders linked to this customer
+        # Note: We need to calculate grand total dynamically as it's not stored as a single db field usually
+        order_qs = (
+            Order.objects
+            .filter(customer=customer)
+            .exclude(status='cancelled') # Safety check
+            .prefetch_related('items')
+            .order_by("created_at")
+        )
+        
+        if dfrom: order_qs = order_qs.filter(created_at__date__gte=dfrom)
+        if dto:   order_qs = order_qs.filter(created_at__date__lte=dto)
+
+        for o in order_qs:
+            g_total = calculate_order_total(o)
+            
+            # Detail string: "Chicken Biryani x2, Coke x1"
+            items_desc = ", ".join([f"{i.menu_item.name if i.menu_item else i.deal.name} x{i.quantity}" for i in o.items.all()])
+            desc = f"Order #{o.number}: {items_desc}"
+
+            entries.append({
+                "dt": o.created_at,
+                "desc": desc,
+                "ref": o.id,
+                "dr": g_total,         # Debit = Receivable
+                "cr": Decimal("0.00"),
+            })
+
+        # 2. Payments Received (From Customer) -> CREDIT (Reduces balance)
+        pay_qs = PaymentReceived.objects.filter(customer=customer).order_by("created_at")
+        if dfrom: pay_qs = pay_qs.filter(date__gte=dfrom)
+        if dto:   pay_qs = pay_qs.filter(date__lte=dto)
+
+        for p in pay_qs:
+            entries.append({
+                "dt": getattr(p, "created_at", None) or datetime.combine(p.date, datetime.min.time()),
+                "desc": f"Payment Received ({p.get_payment_method_display()}) {p.description}",
+                "ref": p.id,
+                "dr": Decimal("0.00"),
+                "cr": Decimal(p.amount), # Credit = Reduces Receivable
+            })
+
+        # 3. Opening Balance Logic
+        opening = Decimal("0.00")
+        if not from_start and dfrom:
+            # Sales before
+            orders_before = Order.objects.filter(customer=customer, created_at__date__lt=dfrom).exclude(status='cancelled')
+            dr_before = sum(calculate_order_total(o) for o in orders_before)
+
+            # Payments before
+            cr_before = PaymentReceived.objects.filter(customer=customer, date__lt=dfrom).aggregate(s=Coalesce(Sum('amount'), Decimal('0')))['s']
+            
+            opening = dr_before - cr_before
+
+        # Sort & Running Balance
+        entries.sort(key=lambda x: x["dt"] or timezone.now())
+        running = opening
+        for it in entries:
+            # For Customer: Balance = Debit (Sale) - Credit (Payment)
+            running = running + it["dr"] - it["cr"]
+            it["bal"] = running
+
+        # Color: Positive = They owe us (Red/Warning), Negative = Advance (Green)
+        # (Though usually Receivable is considered Asset, highlighted Red often means "Outstanding Debt" in UI context)
+        color = "red" if running > 0 else "green"
+
+        ctx.update({
+            "customer": customer,
+            "entries": entries,
+            "opening": opening,
+            "closing": running,
+            "closing_color": color,
+            "from": dfrom,
+            "to": dto,
+            "from_start": from_start,
+        })
+        return ctx
+    
+    
 # ---------- Staff Ledger ----------
 # core/ledger.py  — replace StaffLedgerView with this version
 from datetime import date, datetime

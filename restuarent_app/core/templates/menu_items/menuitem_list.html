@@ -17,7 +17,7 @@
   <thead>
     <tr>
       <th>Image</th><th>Name</th><th>Category</th>
-      <th>Price</th><th>Food Panda Price</th><th>Rank</th><th>Avail.</th><th>Actions</th>
+      <th>Price</th><th>Food Panda Price</th><th>Weight</th><th>Rank</th><th>Avail.</th><th>Actions</th>
     </tr>
   </thead>
   <tbody>
@@ -34,6 +34,7 @@
       <td>{{ item.category.name }}</td>
       <td>{{ item.price }}</td>
       <td>{{ item.food_panda_price|default:"" }}</td>
+      <td>{{ item.get_weight_display|default:"" }}</td>
       <td>{{ item.rank|default:"" }}</td>
       <td>{{ item.is_available|yesno:'Yes,No' }}</td>
       <td>
@@ -49,14 +50,14 @@
       </td>
     </tr>
     {% empty %}
-    <tr><td colspan="7">No items.</td></tr>
+    <tr><td colspan="9">No items.</td></tr>
     {% endfor %}
   </tbody>
 </table>
 
 {# ── CSRF + AJAX setup ─────────────────────────────────────────────── #}
 <script>
-// Django’s recommended way to get the CSRF token from cookies
+// Django's recommended way to get the CSRF token from cookies
 function getCookie(name) {
   let cookieValue = null;
   if (document.cookie && document.cookie !== '') {

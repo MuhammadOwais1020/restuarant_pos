@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center mt-5">
+  <div class="card shadow-lg" style="width: 500px;">
+    <div class="card-header bg-primary text-white">
+      <h4 class="mb-0"><i class="fa fa-user-tag"></i> {{ title }}</h4>
+    </div>
+    <div class="card-body">
+      <form id="customer-form" method="post">
+        {% csrf_token %}
+        
+        <div class="mb-3">
+            <label class="form-label">Customer Name</label>
+            {{ form.name }} <script>
+                // Quick hack to add bootstrap class if not using custom widgets
+                document.querySelectorAll('#customer-form input, #customer-form textarea').forEach(el => el.classList.add('form-control'));
+            </script>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Phone Number</label>
+            {{ form.phone }}
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Address</label>
+            {{ form.address }}
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Opening Balance (Udhaar)</label>
+            {{ form.current_balance }}
+            <div class="form-text">Positive = They owe us. Negative = We owe them.</div>
+        </div>
+
+        <div class="d-flex justify-content-between mt-4">
+          <a href="{% url 'customer_list' %}" class="btn btn-secondary">Cancel</a>
+          <button type="submit" class="btn btn-success px-4"><i class="fa fa-save"></i> Save Customer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+$('#customer-form').on('submit', function(e){
+    e.preventDefault();
+    $.ajax({
+        url: window.location.href,
+        method: 'POST',
+        data: $(this).serialize(),
+        success: function(){
+            showAlert('success', 'Customer saved successfully!');
+            setTimeout(() => window.location.href = "{% url 'customer_list' %}", 800);
+        },
+        error: function(xhr){
+            showAlert('error', 'Error saving customer. Check inputs.');
+        }
+    });
+});
+</script>
+{% endblock %}

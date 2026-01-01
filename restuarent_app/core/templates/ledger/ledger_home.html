@@ -26,7 +26,7 @@
 
   <div class="row g-3">
     <!-- Suppliers -->
-    <div class="col-12 col-lg-6">
+    <div class="col-12 col-lg-4">
       <div class="card ledger-card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
           <div class="fw-semibold">
@@ -60,8 +60,47 @@
       </div>
     </div>
 
+    <div class="col-12 col-lg-4"> <div class="card ledger-card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <div class="fw-semibold">
+            Customers
+            <span class="badge bg-light text-secondary border ms-1">{{ customers|length }}</span>
+          </div>
+          <a class="btn btn-sm btn-outline-primary" href="{% url 'customer_list' %}">
+            <i class="fa fa-cog"></i> Manage
+          </a>
+        </div>
+
+        <div class="ledger-search">
+          <div class="input-group input-group-sm">
+            <span class="input-group-text"><i class="fa fa-search"></i></span>
+            <input id="customerSearch" type="search" class="form-control" placeholder="Search customers…">
+          </div>
+        </div>
+
+        <div id="customersList" class="list-group list-group-flush ledger-list">
+          {% for c in customers %}
+            <a href="{% url 'ledger_customer' c.id %}"
+               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+               data-label="{{ c.name|lower }} {{ c.phone }}">
+              <span class="name">{{ c.name }} <small class="text-muted">({{c.phone}})</small></span>
+              
+              {% if c.current_balance > 0 %}
+                 <span class="badge bg-danger rounded-pill">{{ c.current_balance }}</span>
+              {% elif c.current_balance < 0 %}
+                 <span class="badge bg-success rounded-pill">{{ c.abs_balance }}</span>
+              {% endif %}
+            </a>
+          {% empty %}
+            <div class="list-group-item text-muted">No registered customers.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+
     <!-- Staff -->
-    <div class="col-12 col-lg-6">
+    <div class="col-12 col-lg-4">
       <div class="card ledger-card shadow-sm">
         <div class="card-header d-flex justify-content-between align-items-center">
           <div class="fw-semibold">
@@ -113,5 +152,6 @@
   }
   hookFilter('supplierSearch', 'suppliersList');
   hookFilter('staffSearch', 'staffList');
+  hookFilter('customerSearch', 'customersList');
 </script>
 {% endblock %}

@@ -10,7 +10,7 @@ from .models import Unit
 
 from .printing import send_to_printer
 from .utils import recipe_cost_and_weight
-
+from django.db import transaction
 import json
 from decimal import Decimal
 from django.db.models import Sum, F
@@ -23,14 +23,89 @@ from .models import (
     MenuItem, Deal
 )
 
+from django.urls import reverse_lazy
 from django.db.models import Max
 from django.utils import timezone
+from .models import next_token_for
 
-def get_next_token_number():
-    last_order   = Order.objects.aggregate(m=Max('token_number'))['m'] or 0
-    last_session = TableSession.objects.aggregate(m=Max('token_number'))['m'] or 0
-    return max(last_order, last_session) + 1
+from .utils import get_next_token_number
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView
+from django.http import JsonResponse 
+from .models import Customer
 
+# Mixin to return JSON for AJAX forms
+class AjaxableResponseMixin:
+    def is_ajax(self):
+        return self.request.headers.get('x-requested-with') == 'XMLHttpRequest'
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        if self.is_ajax():
+            return JsonResponse({'message': 'OK'})
+        return response
+
+    def form_invalid(self, form):
+        if self.is_ajax():
+            return JsonResponse(form.errors, status=400)
+        return super().form_invalid(form)
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if self.is_ajax():
+            return JsonResponse({'message': 'Deleted'})
+        return super().delete(request, *args, **kwargs)
+    
+# ---------- CUSTOMERS CRUD ----------
+
+class CustomerListView(LoginRequiredMixin, ListView):
+    model = Customer
+    template_name = 'customers/customer_list.html'
+    context_object_name = 'customers'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().order_by('-created_at')
+        q = self.request.GET.get('q')
+        if q:
+            # Search by Name or Phone
+            qs = qs.filter(name__icontains=q) | qs.filter(phone__icontains=q)
+        return qs
+
+class CustomerCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
+    model = Customer
+    fields = ['name', 'phone', 'address', 'current_balance']
+    template_name = 'customers/customer_form.html'
+    success_url = reverse_lazy('customer_list')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = "Add New Customer"
+        return ctx
+
+class CustomerUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
+    model = Customer
+    fields = ['name', 'phone', 'address', 'current_balance']
+    template_name = 'customers/customer_form.html'
+    success_url = reverse_lazy('customer_list')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = f"Edit {self.object.name}"
+        return ctx
+
+class CustomerDeleteView(LoginRequiredMixin, DeleteView):
+    model = Customer
+    success_url = reverse_lazy('customer_list')
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'message': 'Deleted'})
+        return super().delete(request, *args, **kwargs)
+    
+    
 class LoginView(View):
     def get(self, request):
         return render(request, 'login.html')
@@ -109,7 +184,7 @@ class CategoryListView(LoginRequiredMixin, ListView):
 
 class CategoryCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = Category
-    fields = ['name', 'description', 'rank',  'show_in_orders']
+    fields = ['name', 'description', 'rank',  'show_in_orders', 'default_station']
     template_name = 'categories/category_form.html'
     success_url = reverse_lazy('category_list')
 
@@ -120,7 +195,7 @@ class CategoryDetailView(LoginRequiredMixin, DetailView):
 
 class CategoryUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = Category
-    fields = ['name', 'description', 'rank',  'show_in_orders']
+    fields = ['name', 'description', 'rank',  'show_in_orders', 'default_station']
     template_name = 'categories/category_form.html'
     success_url = reverse_lazy('category_list')
 
@@ -148,7 +223,7 @@ class MenuItemListView(LoginRequiredMixin, ListView):
 
 class MenuItemCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image', 'station', 'weight', 'unit']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -159,7 +234,7 @@ class MenuItemDetailView(LoginRequiredMixin, DetailView):
 
 class MenuItemUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image', 'station', 'weight', 'unit']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -284,98 +359,94 @@ from django.db.models import F, Sum, ExpressionWrapper, DecimalField
 from .models import Order
 from django.utils.dateparse import parse_datetime
 
+from decimal import Decimal
+from django.db.models import Sum, F, ExpressionWrapper, DecimalField
+from django.utils.dateparse import parse_datetime
+from django.utils import timezone
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic import ListView
+from .models import Order, Payment, Customer
+
 class OrderListView(LoginRequiredMixin, ListView):
     model = Order
     template_name = 'orders/order_list.html'
     context_object_name = 'orders'
     paginate_by = 20
 
+    def get_paginate_by(self, queryset):
+        # Turn off pagination if either date filter is present
+        if self.request.GET.get('date_from') or self.request.GET.get('date_to'):
+            return None
+        return super().get_paginate_by(queryset)
+
     def get_queryset(self):
-        # Step 1: Base queryset with select_related
         qs = super().get_queryset().select_related('table', 'created_by').order_by('-created_at')
 
-        # Step 2: Apply filters from GET params
-        q = self.request.GET.get('q')
-        status = self.request.GET.get('status')
+        q         = self.request.GET.get('q')
+        status    = self.request.GET.get('status')
         date_from = self.request.GET.get('date_from')
-        date_to = self.request.GET.get('date_to')
+        date_to   = self.request.GET.get('date_to')
 
         if q:
             qs = qs.filter(number__icontains=q)
         if status:
             qs = qs.filter(status=status)
-        # Parse the datetime‐local strings into real datetimes
-        if date_from:
-            dt_from = parse_datetime(date_from)
-            if dt_from:
-                dt_from = timezone.make_aware(dt_from)
-                qs = qs.filter(created_at__gte=dt_from)
-        if date_to:
-            dt_to = parse_datetime(date_to)
-            if dt_to:
-                dt_to = timezone.make_aware(dt_to)
-                qs = qs.filter(created_at__lte=dt_to)
 
-        # Step 3a: Define an expression for line_total = quantity * unit_price
-        #        We'll sum this expression across all related OrderItem rows.
-        line_total_expr = ExpressionWrapper(
+        if date_from:
+            dt = parse_datetime(date_from)
+            if dt:
+                qs = qs.filter(created_at__gte=timezone.make_aware(dt))
+        if date_to:
+            dt = parse_datetime(date_to)
+            if dt:
+                qs = qs.filter(created_at__lte=timezone.make_aware(dt))
+
+        line_total = ExpressionWrapper(
             F('items__quantity') * F('items__unit_price'),
             output_field=DecimalField(max_digits=12, decimal_places=2)
         )
-
-        # Annotate each Order with 'subtotal' = SUM(line_total_expr)
-        qs = qs.annotate(subtotal=Sum(line_total_expr))
-
-        # Step 3b: Now annotate 'total_amount'
-        # total_amount = (subtotal - discount) + (subtotal * tax_percentage/100) + service_charge
+        qs = qs.annotate(subtotal=Sum(line_total))
         qs = qs.annotate(
             total_amount=ExpressionWrapper(
-                (
-                    F('subtotal')
-                    - F('discount')
-                    + (F('subtotal') * F('tax_percentage') / 100)
-                    + F('service_charge')
-                ),
+                (F('subtotal') - F('discount'))
+                + (F('subtotal') * F('tax_percentage') / 100)
+                + F('service_charge'),
                 output_field=DecimalField(max_digits=12, decimal_places=2)
             )
         )
-
         return qs
-    
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        orders_on_page = ctx['orders']  # current page
+        orders_list = ctx['orders']  # page or full list
 
-        # Serial numbering across pages
-        # page_obj.start_index gives 1-based index of first item
-        ctx['start_index'] = ctx['page_obj'].start_index()
+        # serial numbering
+        if ctx.get('is_paginated'):
+            ctx['start_index'] = ctx['page_obj'].start_index()
+        else:
+            ctx['start_index'] = 1
 
-        # Compute per-page total
-        from decimal import Decimal
-        page_total = sum(
-            (o.total_amount or Decimal('0'))
-            for o in orders_on_page
+        # per‐page (or overall) total
+        ctx['page_total'] = sum(
+            (o.total_amount or Decimal('0')) for o in orders_list
         )
-        ctx['page_total'] = page_total
 
-        # Compute summary stats for this filtered set
-        all_filtered = self.get_queryset()
-        ctx['summary_total_orders'] = all_filtered.count()
-        ctx['summary_total_amount'] = all_filtered.aggregate(
-            total=Sum(F('items__quantity')*F('items__unit_price'))
+        # summary for the entire filtered set
+        full_qs = self.get_queryset()
+        ctx['summary_total_orders']  = full_qs.count()
+        ctx['summary_total_amount']  = full_qs.aggregate(
+            total=Sum(F('items__quantity') * F('items__unit_price'))
         )['total'] or Decimal('0')
-        # Assuming Payment model records actual received amounts
-        ctx['summary_received'] = Payment.objects.filter(
-            order__in=all_filtered
+        ctx['summary_received']      = Payment.objects.filter(
+            order__in=full_qs
         ).aggregate(Sum('amount'))['amount__sum'] or Decimal('0')
-        ctx['summary_remaining'] = ctx['summary_total_amount'] - ctx['summary_received']
+        ctx['summary_remaining']     = ctx['summary_total_amount'] - ctx['summary_received']
 
-        # Preserve date filters in context for form
+        # keep the filters in the form
         ctx['date_from'] = self.request.GET.get('date_from', '')
-        ctx['date_to'] = self.request.GET.get('date_to', '')
+        ctx['date_to']   = self.request.GET.get('date_to', '')
 
         return ctx
-# core/views.py
 
 import json
 from django.shortcuts import render, get_object_or_404
@@ -401,23 +472,47 @@ from .printing import send_to_printer
 from .models import Waiter
 from django.utils import timezone
 
+# core/views.py
+
+import json
+from decimal import Decimal
+from django.http import HttpResponseBadRequest, JsonResponse
+from django.shortcuts import render, get_object_or_404
+from django.views import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.utils import timezone
+from django.db import transaction
+
+from .models import (
+    Category, MenuItem, Deal, Table, Order, OrderItem, 
+    PrintStatus, Waiter, TableSession, Payment, PrintStation
+)
+from .utils import get_next_token_number
+from .printing import send_to_printer
+
+
 class OrderCreateView(LoginRequiredMixin, View):
 
     def get(self, request):
+        # 1. Optimize Categories Query
         categories = (
             Category.objects
-                .filter(show_in_orders=True)
-                .order_by('rank')
-                .prefetch_related('items')
+            .filter(show_in_orders=True)
+            .order_by('rank')
+            .prefetch_related('items')
         )
-        all_waiters = Waiter.objects.order_by('name').values('id','name')
-        waiters_json = json.dumps(list(all_waiters))
 
-        # Serialize menu items
-        # all_menu_items = MenuItem.objects.filter(is_available=True).select_related('category')
-        all_menu_items = MenuItem.objects.filter(is_available=True)\
-        .select_related('category')\
-        .order_by('rank')
+        # 2. Optimize Waiters Query
+        all_waiters = list(Waiter.objects.order_by('name').values('id', 'name'))
+        waiters_json = json.dumps(all_waiters)
+
+        # 3. Optimize Menu Items Query (fetch foreign keys efficiently)
+        all_menu_items = (
+            MenuItem.objects
+            .filter(is_available=True)
+            .select_related('category', 'station') # Fetch station too
+            .order_by('rank')
+        )
 
         menu_items_list = [
             {
@@ -425,19 +520,24 @@ class OrderCreateView(LoginRequiredMixin, View):
                 "name": mi.name,
                 "price": float(mi.price),
                 "food_panda_price": float(mi.food_panda_price) if mi.food_panda_price is not None else 0.0,
-                "category_id": mi.category.id,
+                "category_id": mi.category_id,
                 "image_url": mi.image.url if mi.image else ""
             }
             for mi in all_menu_items
         ]
         all_menu_items_json = json.dumps(menu_items_list)
 
-        # Serialize deals
-        all_deals = Deal.objects.filter(is_available=True).prefetch_related('deal_items__menu_item')
+        # 4. Optimize Deals Query
+        all_deals = (
+            Deal.objects
+            .filter(is_available=True)
+            .prefetch_related('deal_items__menu_item')
+        )
+        
         deals_list = []
         for dl in all_deals:
             items = [
-                {"menu_item_id": di.menu_item.id, "quantity": di.quantity}
+                {"menu_item_id": di.menu_item_id, "quantity": di.quantity}
                 for di in dl.deal_items.all()
             ]
             deals_list.append({
@@ -452,27 +552,40 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         initial_po_items_json = json.dumps([])
 
-        # Annotate tables with pending totals and has_items flag
+        # 5. Optimize Tables & Sessions Query
         tables = list(Table.objects.all().order_by("number"))
-        # prefetch all sessions + their picked_items in one go
-        sessions = TableSession.objects\
-            .prefetch_related('picked_items')\
-            .all()\
+        
+        # Prefetch sessions efficiently
+        sessions = (
+            TableSession.objects
+            .select_related('table')
+            .prefetch_related('picked_items')
             .in_bulk(field_name='table_id')
+        )
         
         for t in tables:
             sess = sessions.get(t.id)
             if sess:
-                # sum(qty × unit_price) across all picked_items
-                total = sum(
-                    pi.quantity * pi.unit_price
-                    for pi in sess.picked_items.all()
-                )
+                total = sum(pi.quantity * pi.unit_price for pi in sess.picked_items.all())
                 t.current_order_total = f"{total:.2f}"
                 t.has_items = total > 0
             else:
                 t.current_order_total = "0.00"
                 t.has_items = False
+
+        # === 6. FETCH CUSTOMERS (NEW) ===
+        # Fetch ID, Name, Phone, Balance
+        customers_qs = Customer.objects.all().values('id', 'name', 'phone', 'current_balance')
+        customers_list = [
+            {
+                'id': c['id'],
+                'name': c['name'],
+                'phone': c['phone'],
+                'balance': float(c['current_balance'] or 0)
+            }
+            for c in customers_qs
+        ]
+        all_customers_json = json.dumps(customers_list)
 
         return render(request, "orders/order_form.html", {
             "categories": categories,
@@ -482,8 +595,9 @@ class OrderCreateView(LoginRequiredMixin, View):
             "order": None,
             "tables": tables,
             "waiters_json": waiters_json,
+            "all_customers_json": all_customers_json,
         })
-
+    
     def post(self, request):
         try:
             data = json.loads(request.body)
@@ -491,151 +605,210 @@ class OrderCreateView(LoginRequiredMixin, View):
             return HttpResponseBadRequest("Invalid JSON")
 
         user = request.user
-        discount = data.get("discount", 0) or 0
-        tax_percentage = data.get("tax_percentage", 0) or 0
-        service_charge = data.get("service_charge", 0) or 0
-        items = data.get("items", [])
+        discount = Decimal(str(data.get("discount", 0) or 0))
+        tax_percentage = Decimal(str(data.get("tax_percentage", 0) or 0))
+        service_charge = Decimal(str(data.get("service_charge", 0) or 0))
+        
+        items_data = data.get("items", [])
         action = data.get("action", "create")
         table_id = data.get("table_id")
-        is_food_panda = data.get("source")
+        
+        is_food_panda = data.get("source") 
+        is_home_delivery = data.get("isHomeDelivery") 
+        
         waiter_id = data.get("waiter_id") or None
-        is_home_delivery = data.get("isHomeDelivery") or None
+        mobile_no  = data.get("mobileNo") or None
+        customer_address = data.get("customerAddress") or None
+        customer_name = data.get("customerName") or None
 
-        # Fetch the Waiter instance (if waiter_id is provided and valid)
+        # Resolve Waiter
+        waiter = None
         if waiter_id:
             try:
                 waiter = Waiter.objects.get(id=waiter_id)
             except Waiter.DoesNotExist:
                 return JsonResponse({"error": "Invalid waiter_id"}, status=400)
-        else:
-            waiter = None  # If no waiter_id is provided, leave it as None
 
-        source_value =  is_food_panda
         my_datetime = timezone.localtime(timezone.now())
-
-        status_value = "paid" if action == "paid" else "pending"
-        if table_id:
-            status_value = "pending"
-
-        order = Order.objects.create(
-            created_by=user,
-            table_id=table_id,
-            discount=discount,
-            tax_percentage=tax_percentage,
-            service_charge=service_charge,
-            status=status_value,
-            source=source_value,
-            waiter=waiter,
-            isHomeDelivery = is_home_delivery,
-            created_at=my_datetime,
-        )
         
-        # — if this was for a table, steal its session’s token_number — 
+        # --- FIXED LOGIC START ---
+        # Default status based on action
+        status_value = "paid" if action == "paid" else "pending"
+        
+        # Only force 'pending' for Tables/Delivery IF the user did NOT click Paid.
+        # This allows you to close/pay a table order immediately.
+        # if (table_id or is_home_delivery == "yes") and action != "paid":
+        #     status_value = "pending"
+        # --- FIXED LOGIC END ---
+
+        session = None
+        order = None
+        session_token = None
+
+        # === 1. ORDER CREATION ===
         if table_id:
-            session = TableSession.objects.get(table_id=table_id)
-            order.token_number = session.token_number
-            order.save(update_fields=['token_number'])
+            with transaction.atomic():
+                session = TableSession.objects.select_for_update().get(table_id=table_id)
+                
+                if session.token_number is None:
+                    session.token_number = get_next_token_number(station=None)
+                    session.save(update_fields=['token_number'])
+                
+                session_token = session.token_number
 
-            session = TableSession.objects.get(table_id=order.table_id)
-            session.token_number = None
-            session.save(update_fields=['token_number'])
+                order = Order.objects.create(
+                    created_by=user,
+                    table_id=table_id,
+                    discount=discount,
+                    tax_percentage=tax_percentage,
+                    service_charge=service_charge,
+                    status=status_value,
+                    source=is_food_panda,
+                    waiter=waiter,
+                    isHomeDelivery=is_home_delivery,
+                    mobile_no=mobile_no,
+                    customer_name=customer_name,
+                    customer_address=customer_address,
+                    created_at=my_datetime,
+                    token_number=session_token,
+                )
+
+                # Reset Session
+                session.token_number = None
+                session.waiter = None
+                session.save(update_fields=['token_number', 'waiter'])
+                
+                # Update Table Occupancy
+                if status_value == "paid":
+                    Table.objects.filter(pk=table_id).update(is_occupied=False)
+                else:
+                    Table.objects.filter(pk=table_id).update(is_occupied=True)
+
         else:
-            order.token_number = get_next_token_number()
-            order.save(update_fields=['token_number'])
-
-
-        print(f'Status Value: {status_value}')
-        print(f"Date time now {timezone.localtime(timezone.now())}")
-        if table_id and status_value != "paid":
-            tbl = Table.objects.get(pk=table_id)
-            tbl.is_occupied = True
-            tbl.save()
-            print(f"1. Table {table_id}: occupied {tbl.is_occupied} for Order # {order.pk}")
-
-        for it in items:
-            unit_price = it["unit_price"]
-            # Check if the source is "Food Panda"
-            if is_food_panda == "food_panda":
-                if it.get("type") == "menu":
-                    menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
-                    unit_price = menu_item.food_panda_price if menu_item.food_panda_price else menu_item.price
-                elif it.get("type") == "deal":
-                    deal = Deal.objects.get(pk=it["deal_id"])
-                    unit_price = deal.food_panda_price if deal.food_panda_price else deal.price
-            else:
-                # Use default price if not a Food Panda order
-                if it.get("type") == "menu":
-                    menu_item = MenuItem.objects.get(pk=it["menu_item_id"])
-                    unit_price = menu_item.price
-                elif it.get("type") == "deal":
-                    deal = Deal.objects.get(pk=it["deal_id"])
-                    unit_price = deal.price
-
-            if it.get("type") == "menu":
-                OrderItem.objects.create(
-                    order=order,
-                    menu_item_id=it["menu_item_id"],
-                    quantity=it["quantity"],
-                    unit_price=unit_price
+            # Walk-in / Delivery
+            token_number = get_next_token_number(station=None)
+            
+            order = Order.objects.create(
+                created_by=user,
+                table_id=None,
+                discount=discount,
+                tax_percentage=tax_percentage,
+                service_charge=service_charge,
+                status=status_value,
+                source=is_food_panda,
+                waiter=waiter,
+                isHomeDelivery=is_home_delivery,
+                mobile_no=mobile_no,
+                customer_name=customer_name,
+                customer_address=customer_address,
+                created_at=my_datetime,
+                token_number=token_number,
             )
-            elif it.get("type") == "deal":
-                OrderItem.objects.create(
-                    order=order,
-                    deal_id=it["deal_id"],
-                    quantity=it["quantity"],
-                    unit_price=unit_price
+
+        # === 2. ITEMS BULK CREATION ===
+        total_price = Decimal('0')
+        order_items_to_create = []
+        
+        for it in items_data:
+            qty = int(it.get("quantity", 1))
+            unit_price = Decimal(str(it.get("unit_price", 0)))
+            
+            line_total = unit_price * qty
+            total_price += line_total
+
+            item_type = it.get("type")
+            
+            order_item = OrderItem(
+                order=order,
+                quantity=qty,
+                unit_price=unit_price,
+                token_printed=False
             )
-     
+            
+            if item_type == "menu":
+                order_item.menu_item_id = it["menu_item_id"]
+            elif item_type == "deal":
+                order_item.deal_id = it["deal_id"]
+            
+            order_items_to_create.append(order_item)
+
+        if order_items_to_create:
+            OrderItem.objects.bulk_create(order_items_to_create)
+
+        # === 3. AUTO-PAYMENT ===
+        # If Walk-in and NOT Home Delivery, create payment immediately if not table
+        # (Or if it's Table/Delivery but status is PAID, we record payment)
+        if status_value == 'paid': 
+             Payment.objects.create(
+                order=order,
+                amount=total_price,
+                method="cash", # You might want to pass this from frontend too
+                details=""
+            )
+
+        # === 4. PRINTING LOGIC ===
         if status_value == "paid" or status_value == "pending":
-                try:
-                    ps = PrintStatus.objects.first()
-                    bill_enabled  = ps.bill  if ps else False
-                    token_enabled = ps.token if ps else False
+            try:
+                ps = PrintStatus.objects.first()
+                # Default to True if no record exists, just to be safe for debugging
+                bill_enabled  = ps.bill  if ps else True 
+                token_enabled = ps.token if ps else True
 
-                    if token_enabled:
-                        if not table_id:
-                            # token_data = build_token_bytes(order, is_food_panda)
-                            # send_to_printer(token_data)
+                # --- TOKEN ---
+                if token_enabled and not table_id:
+                    new_items = list(Order.objects.get(pk=order.id).items.all())
+                    
+                    grouped_items = {}
+                    for oi in new_items:
+                        station = None
+                        if oi.menu_item:
+                            station = oi.menu_item.get_effective_station()
+                        key = station if station else 'Global'
+                        if key not in grouped_items: grouped_items[key] = []
+                        grouped_items[key].append(oi)
 
-                            # gather only fresh (not-yet-printed) items
-                            new_items = list(order.items.filter(token_printed=False))
-                            # split out pizza/chai
-                            pizza_chai = [
-                                oi for oi in new_items
-                                if "pizza" in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                                or "chai"  in (oi.menu_item.name if oi.menu_item else oi.deal.name).lower()
-                            ]
-                            others = [oi for oi in new_items if oi not in pizza_chai]
+                    for key, group_items in grouped_items.items():
+                        target_printer = "POS80 Printer" # Default
+                        token_num = order.token_number
 
-                            if pizza_chai:
-                                token_data = build_token_bytes_for_items(order, pizza_chai, "PIZZA & CHAI TOKEN")
-                                send_to_printer(token_data)
-                            if others:
-                                token_data = build_token_bytes_for_items(order, others, "KITCHEN TOKEN")
-                                send_to_printer(token_data)
+                        if key == 'Global':
+                            header_label = "KITCHEN TOKEN"
+                        else:
+                            station_obj = key
+                            header_label = f"{station_obj.name.upper()} TOKEN"
+                            if station_obj.printer_name:
+                                target_printer = station_obj.printer_name
+                            if station_obj.use_separate_sequence:
+                                token_num = get_next_token_number(station=station_obj)
 
-                    if bill_enabled:
-                        bill_data = build_bill_bytes(order, is_food_panda, "Customer Copy")
-                        send_to_printer(bill_data)
-                        bill_data = build_bill_bytes(order, is_food_panda, "Office Copy")
-                        send_to_printer(bill_data)
+                        from .views import build_token_bytes_for_items
+                        token_data = build_token_bytes_for_items(order, group_items, header_label)
+                        send_to_printer(token_data, printer_name=target_printer)
 
-                    if table_id:
+                    item_ids = [i.id for i in new_items]
+                    OrderItem.objects.filter(id__in=item_ids).update(token_printed=True)
 
-                        # Fetch the table again after making sure the changes are saved
-                        tbl = Table.objects.select_for_update().get(pk=table_id)
-                        tbl.is_occupied = False
-                        tbl.save()
-                        print(f"2. Table {table_id}: occupied {tbl.is_occupied} for Order # {order.pk}")
+                # --- BILL ---
+                if bill_enabled:
+                    # Explicitly use your printer
+                    bill_printer = "POS80 Printer"
+                    
+                    bill_data_cust = build_bill_bytes(order, is_food_panda, "")
+                    send_to_printer(bill_data_cust, printer_name=bill_printer)
+                    
+                    # bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
+                    # send_to_printer(bill_data_office, printer_name=bill_printer)
 
-                        # Commit the changes to the database
-                        tbl.refresh_from_db()  # This reloads the table object from the DB
-                except Exception as e:
-                    return JsonResponse({"error": f"Print failed: {e}"}, status=500)
+            except Exception as e:
+                print(f"Printing Error: {e}")
+                return JsonResponse({
+                    "message": "Order Created (Printing Failed)", 
+                    "order_id": order.id,
+                    "error": str(e)
+                }, status=200)
 
         return JsonResponse({"message": "Order Created", "order_id": order.id})
-
-# core/views.py
+    
 
 import json
 from django.shortcuts      import render, get_object_or_404
@@ -725,6 +898,19 @@ class OrderUpdateView(LoginRequiredMixin, View):
             t.current_order_total = f"{total:.2f}"
             t.has_items           = (total > 0)
 
+        # === FETCH CUSTOMERS (NEW) ===
+        customers_qs = Customer.objects.all().values('id', 'name', 'phone', 'current_balance')
+        customers_list = [
+            {
+                'id': c['id'],
+                'name': c['name'],
+                'phone': c['phone'],
+                'balance': float(c['current_balance'] or 0)
+            }
+            for c in customers_qs
+        ]
+        all_customers_json = json.dumps(customers_list)
+
         return render(request, "orders/order_form.html", {
             "categories":          categories,
             "all_menu_items_json": all_menu_items_json,
@@ -733,6 +919,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
             "order":               order,
             "tables":              tables,
             "waiters_json": waiters_json,
+            "all_customers_json": all_customers_json,
         })
 
 
@@ -894,7 +1081,7 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
     # ─── Restaurant name, larger/bold ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")   # center alignment
     # lines.append(esc + b"\x21" + b"\x30")   # double height & width
-    lines.append(b"Cafe Kunj\n")
+    lines.append(b"NEW MARHABA\n")
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
 
@@ -910,19 +1097,30 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
     lines.append(esc + b"\x21" + b"\x30")   # ESC ! 0x10 → double width, normal height
     lines.append(b"TOKEN #: " + token_str + b"\n\n")
     
-    lines.append(esc + b"\x21" + b"\x00")   # back to normal
 
-    # ─── Date / Time ──────────────────────────────────────────────────────
-    now_str = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
-    lines.append(esc + b"\x61" + b"\x00")   # left align
-    lines.append(b"Date: " + now_str + b"\n")
-    if order.waiter:
-        waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
-        lines.append(waiter_bytes)
+    lines.append(esc + b"\x61" + b"\x01")
+    lines.append(esc + b"\x21" + b"\x30")
+
     if order.isHomeDelivery == "yes":
         lines.append(b"HOME DELIVERY\n\n")
     if order.isHomeDelivery == "no":
         lines.append(b"TAKE AWAY\n\n")
+
+    lines.append(esc + b"\x21" + b"\x00")   # back to normal
+    if order.waiter and order.isHomeDelivery == "yes":
+        waiter_bytes = f"Rider: {order.waiter.name}\n".encode("ascii", "ignore")
+        lines.append(waiter_bytes)
+    elif order.waiter:
+        waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
+        lines.append(waiter_bytes)
+
+    
+    # now_str = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    now_local = timezone.localtime(timezone.now())
+    now_str = now_local.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+
+    lines.append(esc + b"\x61" + b"\x00")   # left align
+    lines.append(b"Date: " + now_str + b"\n")
     lines.append(b"-" * 32 + b"\n")         # 32-char full width separator
     lines.append(esc + b"\x21" + b"\x10") 
 
@@ -937,7 +1135,7 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
         lines.append(serial_number + b". " + name_field + b"  x" + qty_bytes + b"\n")
         i += 1
 
-    lines.append(b"\n\n\n\n")
+    lines.append(b"\n\n\n\n\n")
     # ─── Feed + Cut ────────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")    # full cut
@@ -953,8 +1151,9 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
     # ─── Restaurant name, double size ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")
     lines.append(esc + b"\x21" + b"\x30")
-    lines.append(b"Cafe Kunj\n")
+    lines.append(b"NEW MARHABA\n")
     lines.append(esc + b"\x21" + b"\x00")
+    lines.append(b"0305 3969040\n\n")
     lines.append(b"\n")
     
     
@@ -962,7 +1161,9 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
     order_number_str = str(order.number).encode("ascii")
     token_str = str(order.token_number).encode("ascii")
     copy = str(copy).encode("ascii")
-    dt = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    # dt = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    now_local = timezone.localtime(timezone.now())
+    dt = now_local.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
 
     lines.append(esc + b"\x61" + b"\x00")   # left align
     lines.append(b"" + copy + b"\n")
@@ -981,7 +1182,20 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
             lines.append(b"HOME DELIVERY\n\n")
         if order.isHomeDelivery == "no":
             lines.append(b"TAKE AWAY\n\n")
-    if order.waiter:
+        if order.customer_name:
+            customerName = str(order.customer_name).encode("ascii")
+            lines.append(b"Customer Name: " + customerName + b"\n")
+        if order.mobile_no:
+            mobileNo = str(order.mobile_no).encode("ascii")
+            lines.append(b"Customer Mobile: " + mobileNo + b"\n")
+        if order.customer_address:
+            customerAddress = str(order.customer_address).encode("ascii")
+            lines.append(b"Customer Add: " + customerAddress + b"\n")
+
+    if order.waiter and order.isHomeDelivery == "yes":
+        waiter_bytes = f"Rider: {order.waiter.name}\n".encode("ascii", "ignore")
+        lines.append(waiter_bytes)
+    elif order.waiter:
         waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
         lines.append(waiter_bytes)
 
@@ -1029,13 +1243,14 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
     lines.append(b"Discount : " + f"{discount_f:.2f}".encode("ascii") + b"\n")
     lines.append(b"Tax (" + f"{tax_perc_f:.0f}".encode("ascii") + b"%) : " + f"{tax_amt_f:.2f}".encode("ascii") + b"\n")
     lines.append(b"Service : " + f"{service_f:.2f}".encode("ascii") + b"\n")
-    lines.append(esc + b"\x45" + b"\x01")   # bold on for grand total
+    lines.append(esc + b"\x21" + b"\x20")   # ESC ! 0x20 → double‐width
     lines.append(b"Grand Total: " + f"{grand_f:.2f}".encode("ascii") + b"\n\n")
     lines.append(esc + b"\x45" + b"\x00")   # bold off
 
     # ─── Footer / Branding (professional signature) ───────────────────────
+    lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"-" * 40 + b"\n\n")
-    lines.append(b"Home Delivery Contact: +92 311 1227749\n\n")
+    lines.append(b"Home Delivery Contact:  0310 8000667\n\n")
     lines.append(esc + b"\x61" + b"\x00")   # left align
     lines.append(b"-" * 40 + b"\n\n")
     lines.append(esc + b"\x61" + b"\x01")   # center
@@ -1047,7 +1262,7 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
     # Developer / tagline / contact
     lines.append(b"Developed by Qonkar Technologies\n")
     lines.append(b"www.qonkar.com | +92 305 8214945\n")
-    lines.append(b"\n" * 4)
+    lines.append(b"\n" * 5)
 
     # ─── Cut paper (full) ─────────────────────────────────────────────────
     lines.append(gs + b"\x56" + b"\x00")
@@ -1300,17 +1515,13 @@ class TableUpdateView(UpdateView):
 
 
 def build_token_bytes_for_deltas(order, items_with_delta):
-    """
-    Build an ESC/POS payload containing only the given OrderItem queryset.
-    """
     esc = b"\x1B"
     gs  = b"\x1D"
     lines = []
     
     # ─── Restaurant name, larger/bold ────────────────────────────────────
     lines.append(esc + b"\x61" + b"\x01")   # center alignment
-    # lines.append(esc + b"\x21" + b"\x30")   # double height & width
-    lines.append(b"Cafe Kunj\n")
+    lines.append(b"NEW MARHABA\n")
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
 
@@ -1328,8 +1539,10 @@ def build_token_bytes_for_deltas(order, items_with_delta):
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
 
     # ─── Date / Time ──────────────────────────────────────────────────────
-    now_str = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
-    lines.append(esc + b"\x61" + b"\x00")   # left align
+    # now_str = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    now_local = timezone.localtime(timezone.now())
+    now_str = now_local.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    lines.append(esc + b"\x61" + b"\x00")  # left align
     lines.append(b"Date: " + now_str + b"\n")
     if order.waiter:
         waiter_bytes = f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore")
@@ -1344,7 +1557,7 @@ def build_token_bytes_for_deltas(order, items_with_delta):
         qty_bytes  = str(delta).rjust(3).encode("ascii")
         lines.append(name_field + b"  x" + qty_bytes + b"\n")
 
-    lines.append(b"\n\n\n")
+    lines.append(b"\n\n\n\n\n")
     # ─── feed + cut ─────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")    # full cut
@@ -1556,18 +1769,45 @@ class RawMaterialDeleteView(LoginRequiredMixin, DeleteView):
         return super().delete(request, *args, **kwargs)
 
 
+# Purchase Orders
+# core/views (or wherever your PO views live)
 import json
-from django.urls import reverse_lazy
+from decimal import Decimal
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404
-from django.views.decorators.http import require_POST
-from django.views.generic import ListView, CreateView, DetailView, UpdateView, DeleteView
+from django.views.decorators.http import require_GET, require_POST
+from django.utils.decorators import method_decorator
+from django.urls import reverse_lazy
+from django.views.generic import ListView, CreateView, UpdateView, DetailView, DeleteView
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Sum
+from .models import RawMaterial, PurchaseOrder, PurchaseOrderItem, InventoryTransaction, Expense, BankAccount, Supplier
+from .views import AjaxableResponseMixin
 
-from .models import RawMaterial, PurchaseOrder, PurchaseOrderItem, InventoryTransaction
-from .views import AjaxableResponseMixin  # your existing mixin
+# ----- helper: compute supplier due (across all POs) -----
+def supplier_due(supplier_id, exclude_po_id=None):
+    po_qs = PurchaseOrder.objects.filter(supplier_id=supplier_id)
+    if exclude_po_id:
+        po_qs = po_qs.exclude(pk=exclude_po_id)
+    gross = po_qs.aggregate(s=Sum('net_total'))['s'] or Decimal('0')
 
-# --- Purchase Orders CRUD ---
+    exp_qs = Expense.objects.filter(category='purchase', supplier_id=supplier_id)
+    if exclude_po_id:
+        exp_qs = exp_qs.exclude(purchase_order_id=exclude_po_id)
+    paid = exp_qs.aggregate(s=Sum('amount'))['s'] or Decimal('0')
+
+    return (gross - paid).quantize(Decimal('0.01'))
+
+@require_GET
+def supplier_balance_json(request):
+    try:
+        supplier_id = int(request.GET.get('supplier_id', '0'))
+    except ValueError:
+        return HttpResponseBadRequest("Invalid supplier_id")
+    prev_due = supplier_due(supplier_id)
+    return JsonResponse({'previous_due': float(prev_due)})
+
+# ----- List -----
 class PurchaseOrderListView(LoginRequiredMixin, ListView):
     model = PurchaseOrder
     template_name = 'purchase_orders/purchaseorder_list.html'
@@ -1578,70 +1818,130 @@ class PurchaseOrderListView(LoginRequiredMixin, ListView):
         qs = super().get_queryset().select_related('supplier','created_by').order_by('-created_at')
         q = self.request.GET.get('q')
         if q:
-            return qs.filter(supplier__name__icontains=q)
+            qs = qs.filter(supplier__name__icontains=q)
         return qs
 
-import json
-from django.urls import reverse_lazy
-from django.views.generic import CreateView, UpdateView
-from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import JsonResponse
-
-from .models import RawMaterial, PurchaseOrder, PurchaseOrderItem
-from .views import AjaxableResponseMixin  # your existing mixin
-
+# ----- Create -----
 class PurchaseOrderCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = PurchaseOrder
-    fields = ['supplier']
+    fields = ['supplier']  # keep simple; we set tax/discount etc. from POST
     template_name = 'purchase_orders/purchaseorder_form.html'
     success_url = reverse_lazy('purchase_order_list')
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        # serialize raw materials
         rms = RawMaterial.objects.select_related('supplier').order_by('name')
-        ctx['raw_materials_json'] = json.dumps([
-            {'pk': rm.pk, 'name': rm.name, 'unit': rm.unit}
-            for rm in rms
-        ])
-        # no existing items on create
+        ctx['raw_materials_json'] = json.dumps([{'pk': rm.pk, 'name': rm.name, 'unit': rm.unit} for rm in rms])
         ctx['initial_po_items_json'] = json.dumps([])
+        ctx['bank_accounts'] = BankAccount.objects.all()
         return ctx
 
     def form_valid(self, form):
         form.instance.created_by = self.request.user
+        # Optional %s
+        tax_percent = Decimal(self.request.POST.get('tax_percent') or '0')
+        disc_percent = Decimal(self.request.POST.get('discount_percent') or '0')
+
         resp = super().form_valid(form)
+
+        # Line items
         data = json.loads(self.request.POST.get('po_items_json', '[]'))
-        total = 0
+        subtotal = Decimal('0')
         for it in data:
-            qty = it['quantity']
-            up  = it['unit_price']
+            qty = Decimal(str(it['quantity']))
+            up  = Decimal(str(it['unit_price']))
             PurchaseOrderItem.objects.create(
                 purchase_order=self.object,
-                raw_material_id=it['raw_material_id'],
+                raw_material_id=int(it['raw_material_id']),
                 quantity=qty,
                 unit_price=up
             )
-            total += qty * up
-        self.object.total_cost = total
-        self.object.save()
+            subtotal += (qty * up)
+
+        # totals
+        self.object.tax_percent = tax_percent
+        self.object.discount_percent = disc_percent
+        self.object.recompute_totals()   # sets total_cost (subtotal) and net_total
+        # overwrite subtotal with computed one to be safe
+        self.object.total_cost = subtotal
+        self.object.save(update_fields=['total_cost', 'tax_percent', 'discount_percent', 'net_total'])
+
+        # Payment (optional)
+        paid_amount = Decimal(self.request.POST.get('paid_amount') or '0')
+        pay_source  = self.request.POST.get('payment_source') or 'cash'
+        bank_id     = self.request.POST.get('bank_account') or None
+        if paid_amount > 0:
+            Expense.objects.create(
+                date=self.object.created_at.date(),
+                category='purchase',
+                amount=paid_amount,
+                description=f"Payment for PO #{self.object.id}",
+                supplier=self.object.supplier,
+                staff=None,
+                payment_source=pay_source,
+                bank_account=BankAccount.objects.get(pk=bank_id) if (pay_source=='bank' and bank_id) else None,
+                created_by=self.request.user,
+                purchase_order=self.object,
+            )
         return resp
+
+# views.py (or wherever your class lives)
+
+import json
+from decimal import Decimal
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Sum
+from django.urls import reverse_lazy
+from django.views.generic import UpdateView
+
+from .views import AjaxableResponseMixin  # keep your existing mixin
+from .models import RawMaterial, PurchaseOrder, PurchaseOrderItem, Expense
+
 
 class PurchaseOrderUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = PurchaseOrder
+    # keep your original editable fields list (don’t add/remove form fields here)
     fields = ['supplier']
     template_name = 'purchase_orders/purchaseorder_form.html'
     success_url = reverse_lazy('purchase_order_list')
 
+    # ---------- helpers ----------
+    def _previous_due_with_fallback(self, supplier_id: int, exclude_po_id: int | None) -> Decimal:
+        """
+        Sum all earlier POs for this supplier (excluding the one we're editing).
+        Use net_total if present; otherwise fall back to total_cost (old records).
+        Then subtract any 'purchase' expenses linked to those POs.
+        """
+        qs = PurchaseOrder.objects.filter(supplier_id=supplier_id)
+        if exclude_po_id:
+            qs = qs.exclude(pk=exclude_po_id)
+
+        total_charges = Decimal('0')
+        for row in qs.values('id', 'net_total', 'total_cost'):
+            nt = row.get('net_total') or Decimal('0')
+            tc = row.get('total_cost') or Decimal('0')
+            total_charges += (nt if nt > 0 else tc)
+
+        po_ids = list(qs.values_list('id', flat=True))
+        paid_sum = Expense.objects.filter(
+            category='purchase',
+            purchase_order_id__in=po_ids
+        ).aggregate(s=Sum('amount'))['s'] or Decimal('0')
+
+        return total_charges - paid_sum
+
+    # ---------- context ----------
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        # serialize raw materials
+
+        # Materials for the line-items table
         rms = RawMaterial.objects.select_related('supplier').order_by('name')
         ctx['raw_materials_json'] = json.dumps([
             {'pk': rm.pk, 'name': rm.name, 'unit': rm.unit}
             for rm in rms
         ])
-        # existing line items → JSON for JS
+
+        # Existing lines for this PO
         existing_items = [
             {
                 'raw_material_id': pi.raw_material_id,
@@ -1651,17 +1951,45 @@ class PurchaseOrderUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateV
             for pi in self.object.items.all()
         ]
         ctx['initial_po_items_json'] = json.dumps(existing_items)
+
+        # ---- FIX 1: previous_due must EXCLUDE this PO to avoid double counting on edit
+        previous_due = self._previous_due_with_fallback(
+            supplier_id=self.object.supplier_id,
+            exclude_po_id=self.object.pk
+        )
+        ctx['previous_due'] = previous_due
+
+        # Some templates/scripts like to have server values as JSON
+        # (We DO NOT add previous_due into net_total here — net_total is always just tax/discount math)
+        server_net_total = self.object.net_total or self.object.total_cost or Decimal('0')
+        ctx['po_meta_json'] = json.dumps({
+            'subtotal': float(self.object.total_cost or 0),
+            'tax_percent': float(getattr(self.object, 'tax_percent', 0) or 0),
+            'discount_percent': float(getattr(self.object, 'discount_percent', 0) or 0),
+            'server_net_total': float(server_net_total),
+            'previous_due': float(previous_due),
+        })
+
         return ctx
 
+    # ---------- save ----------
     def form_valid(self, form):
-        # delete old items
+        """
+        Keep your existing logic:
+          - Replace line items from posted JSON
+          - Recalculate subtotal (total_cost) on the server
+        We do NOT mix in previous_due here (net_total remains pure item/tax/discount math).
+        """
+        # wipe old items before saving so we re-build cleanly
         PurchaseOrderItem.objects.filter(purchase_order=self.object).delete()
-        resp = super().form_valid(form)
+
+        response = super().form_valid(form)
+
         data = json.loads(self.request.POST.get('po_items_json', '[]'))
-        total = 0
+        total = Decimal('0')
         for it in data:
-            qty = it['quantity']
-            up  = it['unit_price']
+            qty = Decimal(str(it['quantity']))
+            up = Decimal(str(it['unit_price']))
             PurchaseOrderItem.objects.create(
                 purchase_order=self.object,
                 raw_material_id=it['raw_material_id'],
@@ -1669,9 +1997,35 @@ class PurchaseOrderUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateV
                 unit_price=up
             )
             total += qty * up
+
+        # Subtotal only (server will keep any tax/discount/net_total logic you already have elsewhere)
         self.object.total_cost = total
+
+        # If you’re already computing net_total (tax/discount) elsewhere, keep that as-is.
+        # We intentionally do NOT add previous_due into net_total.
+        # Example (only if your model has these fields and the client posts them):
+        tax_percent = Decimal(str(self.request.POST.get('tax_percent', '0') or '0'))
+        discount_percent = Decimal(str(self.request.POST.get('discount_percent', '0') or '0'))
+
+        # Safe compute if those fields exist on your model; otherwise this is a no-op
+        if hasattr(self.object, 'tax_percent'):
+            self.object.tax_percent = tax_percent
+        if hasattr(self.object, 'discount_percent'):
+            self.object.discount_percent = discount_percent
+        if hasattr(self.object, 'net_total'):
+            tax_amt = (total * tax_percent) / Decimal('100')
+            disc_amt = (total * discount_percent) / Decimal('100')
+            self.object.net_total = (total + tax_amt - disc_amt)
+
         self.object.save()
-        return resp
+        return response
+
+from decimal import Decimal
+from django.db.models import Sum
+
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.views.generic import DetailView
+from .models import PurchaseOrder, InventoryTransaction, Expense
 
 
 class PurchaseOrderDetailView(LoginRequiredMixin, DetailView):
@@ -1681,28 +2035,51 @@ class PurchaseOrderDetailView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        # stock‑in transactions for this PO
-        ctx['transactions'] = InventoryTransaction.objects.filter(
-            purchase_order_item__purchase_order=self.object
-        ).order_by('-timestamp')
+        order = self.object
+
+        # Stock-in transactions for this PO
+        ctx['transactions'] = (
+            InventoryTransaction.objects
+            .filter(purchase_order_item__purchase_order=order)
+            .order_by('-timestamp')
+        )
+
+        # Payments recorded against this PO (category: purchase)
+        ctx['payments'] = (
+            Expense.objects
+            .filter(purchase_order=order, category='purchase')
+            .order_by('-created_at')
+        )
+
+        # Sum paid for this PO
+        paid_sum = ctx['payments'].aggregate(s=Sum('amount'))['s'] or Decimal('0')
+        ctx['paid_sum'] = paid_sum
+
+        # Supplier balance before this PO (exclude this PO from the calc)
+        ctx['previous_due'] = supplier_due(order.supplier_id, exclude_po_id=order.pk)
+
+        # Use net_total if you have it; otherwise fall back to total_cost
+        net_total = getattr(order, 'net_total', None)
+        if net_total is None:
+            net_total = order.total_cost
+
+        # Remaining after current PO and its payments
+        ctx['remaining_after'] = (ctx['previous_due'] + net_total - paid_sum)
+
         return ctx
+
 
 class PurchaseOrderDeleteView(LoginRequiredMixin, DeleteView):
     model = PurchaseOrder
     success_url = reverse_lazy('purchase_order_list')
-
-    def delete(self, request, *args, **kwargs):
-        self.object = self.get_object()
-        self.object.delete()
-        if request.is_ajax():
-            return JsonResponse({'message':'Deleted'})
-        return super().delete(request, *args, **kwargs)
 
 @require_POST
 def purchase_order_receive(request, pk):
     po = get_object_or_404(PurchaseOrder, pk=pk)
     po.mark_received()
     return JsonResponse({'status':'success'})
+
+
 
 from decimal import Decimal
 from datetime import date
@@ -2159,31 +2536,34 @@ from django.http import JsonResponse, HttpResponseBadRequest
 from .models import Table, TableSession, TableMenuItem, MenuItem, Deal
 from django.db.models import F
 
+from django.db import transaction
+
 class TableSessionView(View):
     """GET session data; POST to set waiter & home_delivery"""
     def get(self, request, table_id):
         table = get_object_or_404(Table, pk=table_id)
-        session, created = TableSession.objects.get_or_create(table=table)
-        # if brand new (or no token yet), allocate one now
-        if created or session.token_number is None:
-            session.token_number = get_next_token_number()
-            session.save(update_fields=['token_number'])
-        data = {
+        with transaction.atomic():
+            session, created = TableSession.objects.select_for_update().get_or_create(table=table)
+            if created or session.token_number is None:
+                # allocate from today's noon→noon sequence
+                session.token_number = get_next_token_number()
+                session.save(update_fields=['token_number'])
+        return JsonResponse({
             'waiter_id': session.waiter_id,
             'home_delivery': session.home_delivery,
             'token_number': session.token_number,
-        }
-        return JsonResponse(data)
+        })
 
     def post(self, request, table_id):
         import json
         payload = json.loads(request.body)
         table = get_object_or_404(Table, pk=table_id)
         session, _ = TableSession.objects.get_or_create(table=table)
-        session.waiter_id    = payload.get('waiter_id')
+        session.waiter_id     = payload.get('waiter_id')
         session.home_delivery = bool(payload.get('home_delivery'))
         session.save()
         return JsonResponse({'status':'ok'})
+
 
 class TableItemsView(View):
     """GET items; POST to upsert quantity"""
@@ -2201,11 +2581,15 @@ class TableItemsView(View):
                 'quantity': ti.quantity,
                 'unit_price': float(ti.unit_price),
                 'printed_quantity': ti.printed_quantity,
+                'created_at': ti.created_at.isoformat() if ti.created_at else None,
+                'updated_at': ti.updated_at.isoformat() if ti.updated_at else None,
+                'last_added_at': ti.last_added_at.isoformat() if ti.last_added_at else None,
             })
         return JsonResponse({'items': data})
 
     def post(self, request, table_id):
         import json
+        my_datetime = timezone.localtime(timezone.now())
         payload = json.loads(request.body)
         session = get_object_or_404(TableSession, table_id=table_id)
         st = payload['source_type']
@@ -2216,6 +2600,8 @@ class TableItemsView(View):
             session=session,
             source_type=st,
             source_id=sid,
+            created_at = my_datetime,
+            updated_at = my_datetime,
             defaults={'quantity': qty, 'unit_price': up}
         )
         if not created:
@@ -2259,9 +2645,9 @@ class TableItemsView(View):
         # send_to_printer(payload)
 
         # 5) mark all as printed
-        for ti in remaining:
-            ti.printed_quantity = 0
-            ti.save(update_fields=['printed_quantity'])
+        # for ti in remaining:
+        #     ti.printed_quantity = 0
+        #     ti.save(update_fields=['printed_quantity'])
 
         # 6) respond
         return JsonResponse({
@@ -2329,7 +2715,9 @@ def build_full_session_token_bytes(session, items):
     lines.append(esc + b"\x21" + b"\x00")        # normal
 
     # — Date / Waiter —
-    now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    # now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    now_local = timezone.localtime(timezone.now())
+    now = now_local.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
     lines.append(esc + b"\x61" + b"\x00")        # left
     lines.append(b"Date   : " + now + b"\n")
     if session.waiter:
@@ -2350,7 +2738,7 @@ def build_full_session_token_bytes(session, items):
         qty_f   = str(ti.quantity).rjust(3).encode()             # "  3", etc.
         lines.append(idx_f + b"  " + name_f + b"  " + qty_f + b"\n")
 
-    lines.append(b"\n\n\n")
+    lines.append(b"\n\n\n\n\n")
     # — Cut —
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")  # full cut
@@ -2373,59 +2761,6 @@ from django.utils     import timezone
 
 from .models          import TableSession, MenuItem, Deal
 from .printing        import send_to_printer
-
-class TablePrintTokenView(View):
-    def post(self, request, table_id):
-        # 1) Load the session
-        session = get_object_or_404(TableSession, table_id=table_id)
-
-        if session.token_number is None:
-            session.token_number = get_next_token_number()
-            session.save(update_fields=['token_number'])
-
-        # 2) Gather all picked_items & compute deltas
-        items = session.picked_items.all()
-        deltas = [
-            (ti, ti.quantity - (ti.printed_quantity or 0))
-            for ti in items
-        ]
-        items_with_delta = [(ti, d) for ti, d in deltas if d != 0]
-
-        # 3) Nothing to print?
-        if not items_with_delta:
-            # print("[TOKEN DEBUG] nothing to print")
-            return JsonResponse({'status': 'nothing_to_print'})
-
-        # 4) Debug: log each delta
-        # print("[TOKEN DEBUG] will print deltas:")
-        for ti, delta in items_with_delta:
-            Model  = MenuItem if ti.source_type == "menu" else Deal
-            name   = Model.objects.get(pk=ti.source_id).name
-            action = "Added" if delta > 0 else "Removed"
-            # print(f"  • {action} {abs(delta)} × {name} ({ti.source_type})")
-
-        # 5) Build payload
-        payload = build_session_token_bytes(session, items_with_delta)
-
-        # 6) Debug: dump the full payload line-by-line
-        # print("[TOKEN DEBUG] full payload:")
-        # for line in payload.split(b"\n"):
-        #     try:
-        #         print("    " + line.decode("ascii"))
-        #     except UnicodeDecodeError:
-        #         print("    " + repr(line))
-
-        # 7) Send to printer & mark printed
-        send_to_printer(payload)
-        for ti, _ in items_with_delta:
-            ti.printed_quantity = ti.quantity
-            ti.save(update_fields=['printed_quantity'])
-
-        # print(f"[TOKEN DEBUG] sent {len(items_with_delta)} lines to printer")
-        return JsonResponse({
-            'status': 'printed',
-            'count': len(items_with_delta)
-        })
 
 
 def build_session_token_bytes(session, items_with_delta):
@@ -2456,9 +2791,13 @@ def build_session_token_bytes(session, items_with_delta):
     lines.append(esc + b"\x21" + b"\x00")     # normal
 
     # ─── Date / Waiter / Mode ─────────────────────────────────────────────
-    now = timezone.localtime(timezone.now())\
-                   .strftime("%Y-%m-%d %I:%M:%S %p")\
-                   .encode("ascii")
+    # now = timezone.localtime(timezone.now())\
+    #                .strftime("%Y-%m-%d %I:%M:%S %p")\
+    #                .encode("ascii")
+    
+    now_local = timezone.localtime(timezone.now())
+    now = now_local.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    
     lines.append(esc + b"\x61" + b"\x00")     # left
     lines.append(b"Date  : " + now + b"\n")
     if session.waiter:
@@ -2494,123 +2833,13 @@ def build_session_token_bytes(session, items_with_delta):
                 name.ljust(18).encode("ascii","ignore") + b"  " +
                 str(d).rjust(3).encode() + b"\n"
             )
-
+    
+    lines.append(b"\n\n\n\n\n")
     # ─── Feed + Cut ────────────────────────────────────────────────────────
     lines.append(b"\n" * 4)
     lines.append(gs + b"\x56" + b"\x00")      # full cut
 
     return b"".join(lines)
-
-
-
-# from django.shortcuts import get_object_or_404
-# from django.http      import JsonResponse
-# from django.views     import View
-# from django.utils     import timezone
-
-# from .models          import TableSession, MenuItem, Deal
-# from .printing        import send_to_printer
-
-# class TablePrintTokenView(View):
-#     def post(self, request, table_id):
-#         # 1) Load the session
-#         session = get_object_or_404(TableSession, table_id=table_id)
-
-#         # 2) Compute deltas for every picked_item
-#         items = session.picked_items.all()
-#         deltas = [
-#             (ti, ti.quantity - (ti.printed_quantity or 0))
-#             for ti in items
-#         ]
-#         items_with_delta = [(ti, d) for ti, d in deltas if d != 0]
-
-#         # 3) Nothing changed → nothing to print
-#         if not items_with_delta:
-#             print("[TOKEN DEBUG] nothing to print")
-#             return JsonResponse({'status': 'nothing_to_print'})
-
-#         # 4) Debug output
-#         print("[TOKEN DEBUG] will print:")
-#         for ti, delta in items_with_delta:
-#             Model  = MenuItem if ti.source_type == "menu" else Deal
-#             name   = Model.objects.get(pk=ti.source_id).name
-#             action = "Added" if delta > 0 else "Removed"
-#             print(f" • {action} {abs(delta)} × {name}")
-
-#         # 5) Build & send
-#         payload = build_session_token_bytes(session, items_with_delta)
-#         send_to_printer(payload)
-
-#         # 6) Mark printed
-#         for ti, _ in items_with_delta:
-#             ti.printed_quantity = ti.quantity
-#             ti.save(update_fields=['printed_quantity'])
-
-#         print(f"[TOKEN DEBUG] sent {len(items_with_delta)} lines")
-#         return JsonResponse({'status': 'printed', 'count': len(items_with_delta)})
-
-
-# def build_session_token_bytes(session, items_with_delta):
-#     esc = b"\x1B"
-#     gs  = b"\x1D"
-#     lines = []
-
-#     # header
-#     has_removal = any(delta < 0 for _, delta in items_with_delta)
-#     lines.append(esc + b"\x61" + b"\x01")   # center
-#     lines.append(esc + b"\x21" + b"\x20")   # double-width
-#     lines.append(b"UPDATED KITCHEN TOKEN\n" if has_removal else b"KITCHEN TOKEN\n")
-#     lines.append(esc + b"\x21" + b"\x00")   # normal
-#     lines.append(b"\n")
-
-#     # table #
-#     table_no = str(session.table.number).encode("ascii")
-#     lines.append(esc + b"\x61" + b"\x01")
-#     lines.append(esc + b"\x21" + b"\x30")
-#     lines.append(b"TABLE #: " + table_no + b"\n\n")
-#     lines.append(esc + b"\x21" + b"\x00")
-
-#     # date / waiter / mode
-#     now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
-#     lines.append(esc + b"\x61" + b"\x00")
-#     lines.append(b"Date  : " + now + b"\n")
-#     if session.waiter:
-#         wk = session.waiter.name.encode("ascii","ignore")
-#         lines.append(b"Waiter: " + wk + b"\n")
-#     lines.append(b"-" * 32 + b"\n")
-
-#     # columns
-#     lines.append(b"#  Item                 Qty\n")
-#     lines.append(b"-" * 32 + b"\n")
-
-#     # items
-#     if has_removal:
-#         current = session.picked_items.all()
-#         for idx, ti in enumerate(current, start=1):
-#             Model = MenuItem if ti.source_type=="menu" else Deal
-#             name  = Model.objects.get(pk=ti.source_id).name[:18]
-#             qty   = ti.quantity
-#             lines.append(
-#                 str(idx).rjust(2).encode() + b"  " +
-#                 name.ljust(18).encode("ascii","ignore") + b"  " +
-#                 str(qty).rjust(3).encode() + b"\n"
-#             )
-#     else:
-#         added = [(ti,d) for ti,d in items_with_delta if d>0]
-#         for idx,(ti,d) in enumerate(added, start=1):
-#             Model = MenuItem if ti.source_type=="menu" else Deal
-#             name  = Model.objects.get(pk=ti.source_id).name[:18]
-#             lines.append(
-#                 str(idx).rjust(2).encode() + b"  " +
-#                 name.ljust(18).encode("ascii","ignore") + b"  " +
-#                 str(d).rjust(3).encode() + b"\n"
-#             )
-
-#     # cut
-#     lines.append(b"\n" * 4)
-#     lines.append(gs + b"\x56" + b"\x00")
-
-#     return b"".join(lines)
 
 
 from django.views import View
@@ -2634,12 +2863,11 @@ ESC = b"\x1B"
 GS  = b"\x1D"
 
 def build_token_bytes_for_items(order, items, header_label):
-    """Builds an ESC/POS kitchen token for a given list of OrderItem."""
     lines = []
     # 1) Header
     lines.append(ESC + b"\x61" + b"\x01")   # center alignment
     # lines.append(esc + b"\x21" + b"\x30")   # double height & width
-    lines.append(b"Cafe Kunj\n")
+    lines.append(b"NEW MARHABA\n")
     lines.append(ESC + b"\x21" + b"\x00")   # back to normal
     lines.append(b"\n")
 
@@ -2669,5 +2897,371 @@ def build_token_bytes_for_items(order, items, header_label):
         qty = str(oi.quantity).rjust(3).encode("ascii")
         lines.append(f"{idx}. ".encode("ascii") + name_field + b" x" + qty + b"\n")
     # 6) Cut
+
+    lines.append(b"\n\n")
     lines.append(b"\n\n\n\n" + GS + b"\x56" + b"\x00")
     return b"".join(lines)
+
+
+from django.shortcuts import get_object_or_404
+from django.http      import JsonResponse
+from django.views     import View
+from django.utils     import timezone
+
+from .models          import TableSession, MenuItem, Deal
+from .printing        import send_to_printer
+from .utils           import get_next_token_number
+
+ESC = b"\x1B"
+GS  = b"\x1D"
+
+
+def build_group_token_bytes(session, items_with_delta, header_label):
+    lines = []
+
+    # ── Header ─────────────────────────────────────────────
+    lines.append(ESC + b"\x61" + b"\x01")            # center
+    lines.append(ESC + b"\x21" + b"\x20")            # double-width
+    lines.append(header_label.encode("ascii") + b"\n")
+    lines.append(ESC + b"\x21" + b"\x00")            # normal
+    lines.append(b"\n")
+
+    # ── Token # ────────────────────────────────────────────
+    token_str = str(session.token_number).encode("ascii")
+    lines.append(ESC + b"\x21" + b"\x30")            # double width
+    lines.append(b"TOKEN #: " + token_str + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00")            # normal
+
+    # ── Table # ────────────────────────────────────────────
+    table_no = str(session.table.number).encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x01")
+    lines.append(ESC + b"\x21" + b"\x30")
+    lines.append(b"TABLE #: " + table_no + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00")
+
+    # ── Date / Waiter ───────────────────────────────────────
+    now = timezone.localtime(timezone.now())\
+                   .strftime("%Y-%m-%d %I:%M:%S %p")\
+                   .encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x00")
+    lines.append(b"Date  : " + now + b"\n")
+    if session.waiter:
+        waiter = session.waiter.name.encode("ascii", "ignore")
+        lines.append(b"Waiter: " + waiter + b"\n")
+    lines.append(b"-" * 32 + b"\n")
+
+    # ── Columns ─────────────────────────────────────────────
+    lines.append(b"#  Item                 Qty\n")
+    lines.append(b"-" * 32 + b"\n")
+
+    # ── Items Section ───────────────────────────────────────
+    for idx, (ti, delta) in enumerate(items_with_delta, start=1):
+        Model = MenuItem if ti.source_type=='menu' else Deal
+        name  = Model.objects.get(pk=ti.source_id).name[:18]
+        idx_b = str(idx).rjust(2).encode()
+        name_b= name.ljust(18).encode("ascii","ignore")
+        qty_b = str(delta).rjust(3).encode()
+        lines.append(idx_b + b"  " + name_b + b"  " + qty_b + b"\n")
+
+    lines.append(b"\n\n\n\n\n")
+    # ── Cut ───────────────────────────────────────────────────
+    lines.append(b"\n" * 4)
+    lines.append(GS + b"\x56" + b"\x00")              # full cut
+
+    return b"".join(lines)
+
+
+
+# core/views.py
+
+import json
+from django.views import View
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+
+from .models import TableSession, Table
+
+class TableSessionSwitchView(LoginRequiredMixin, View):
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            old_id = data['from_table']
+            new_id = data['to_table']
+        except (KeyError, json.JSONDecodeError):
+            return JsonResponse({'error': 'Invalid payload'}, status=400)
+
+        # 1) Fetch the existing session on the old table
+        try:
+            session = TableSession.objects.get(table_id=old_id)
+        except TableSession.DoesNotExist:
+            return JsonResponse({'error': 'No active session on your current table.'}, status=400)
+
+        # 2) Ensure target table is truly available
+        #    (if a session exists there, it must have no picked_items)
+        existing = TableSession.objects.filter(table_id=new_id).first()
+        if existing and existing.picked_items.exists():
+            return JsonResponse({'error': 'That table is not available.'}, status=400)
+        # delete any empty session
+        if existing:
+            existing.delete()
+
+        # 3) Re-assign our session to the new table
+        session.table_id = new_id
+        session.save(update_fields=['table'])
+
+        # 4) Update occupancy flags
+        Table.objects.filter(pk=old_id).update(is_occupied=False)
+        Table.objects.filter(pk=new_id).update(is_occupied=True)
+
+        return JsonResponse({'status': 'ok', 'new_table': new_id})
+    
+
+# core/views.py
+
+from django.shortcuts import get_object_or_404
+from django.http import JsonResponse
+from django.views import View
+from .models import TableSession, MenuItem, Deal, PrintStation
+from .printing import send_to_printer
+from .utils import get_next_token_number
+from django.utils import timezone
+
+class TablePrintTokenView(View):
+    def post(self, request, table_id):
+        session = get_object_or_404(TableSession, table_id=table_id)
+        
+        # 1. Ensure TableSession has a global token number (for reference)
+        if session.token_number is None:
+            # station=None gets the global sequence
+            session.token_number = get_next_token_number(station=None)
+            session.save(update_fields=['token_number'])
+
+        # 2. Identify new items (deltas)
+        items = session.picked_items.all()
+        deltas = [(ti, ti.quantity - (ti.printed_quantity or 0)) for ti in items]
+        items_with_delta = [(ti, d) for ti, d in deltas if d != 0]
+
+        if not items_with_delta:
+            return JsonResponse({'status': 'nothing_to_print'})
+
+        # 3. Group items by PrintStation
+        #    Key: Station object (or 'Global' string for default), Value: List of (ti, delta)
+        grouped_items = {}
+
+        for ti, d in items_with_delta:
+            station = None
+            if ti.source_type == 'menu':
+                try:
+                    mi = MenuItem.objects.get(pk=ti.source_id)
+                    # Use the helper method we added to MenuItem to find the station
+                    station = mi.get_effective_station()
+                except MenuItem.DoesNotExist:
+                    pass
+            elif ti.source_type == 'deal':
+                # Logic for deals: currently they default to Global (Main Kitchen)
+                # You can add logic here if Deals need specific stations
+                pass 
+
+            # If no station is found, group under "Global"
+            key = station if station else 'Global'
+            
+            if key not in grouped_items:
+                grouped_items[key] = []
+            grouped_items[key].append((ti, d))
+
+        # 4. Process each group and print
+        for key, group_items in grouped_items.items():
+            
+            # Determine Header and Token Number for this specific group
+            if key == 'Global':
+                # Default behavior
+                header_label = "KITCHEN TOKEN"
+                token_num = session.token_number # Use the session's global token
+            else:
+                # It is a specific PrintStation configuration
+                station_obj = key
+                header_label = f"{station_obj.name.upper()} TOKEN"
+                
+                # Check if this station needs its own separate counting sequence (1, 2, 3...)
+                if station_obj.use_separate_sequence:
+                    token_num = get_next_token_number(station=station_obj)
+                else:
+                    # Otherwise share the main token number
+                    token_num = session.token_number
+
+            # Build the print bytes using the new dynamic helper
+            payload = build_dynamic_token_bytes(
+                session, 
+                group_items, 
+                header_label, 
+                token_num
+            )
+            
+            # Send to printer
+            print(f"Printing {header_label} with Token {token_num}")
+            try:
+                send_to_printer(payload)
+            except Exception as e:
+                print(f"Printer Error for {header_label}: {e}")
+
+        # 5. Update printed quantities for all items processed
+        for ti, _ in items_with_delta:
+            ti.printed_quantity = ti.quantity
+            ti.save(update_fields=['printed_quantity'])
+
+        return JsonResponse({
+            'status': 'printed', 
+            'count': len(items_with_delta)
+        })
+
+
+def build_dynamic_token_bytes(session, items_with_delta, header_label, token_number):
+    """
+    Generates ESC/POS bytes for a dynamic station token.
+    """
+    ESC = b"\x1B"
+    GS  = b"\x1D"
+    lines = []
+
+    # -- Header (Center, Double Width) --
+    lines.append(ESC + b"\x61" + b"\x01") 
+    lines.append(ESC + b"\x21" + b"\x20") 
+    lines.append(header_label.encode("ascii", "ignore") + b"\n")
+    lines.append(ESC + b"\x21" + b"\x00") # Reset
+    lines.append(b"\n")
+
+    # -- Token # (Center, Double Width/Height) --
+    token_str = str(token_number).encode("ascii")
+    lines.append(ESC + b"\x21" + b"\x30") 
+    lines.append(b"TOKEN #: " + token_str + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00") 
+
+    # -- Table # (Center, Double Width) --
+    table_no = str(session.table.number).encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x01")
+    lines.append(ESC + b"\x21" + b"\x30")
+    lines.append(b"TABLE #: " + table_no + b"\n\n")
+    lines.append(ESC + b"\x21" + b"\x00")
+
+    # -- Meta Info (Left Align) --
+    now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
+    lines.append(ESC + b"\x61" + b"\x00") 
+    lines.append(b"Date  : " + now + b"\n")
+    if session.waiter:
+        w_name = session.waiter.name.encode("ascii", "ignore")
+        lines.append(b"Waiter: " + w_name + b"\n")
+    lines.append(b"-" * 32 + b"\n")
+
+    # -- Items List --
+    lines.append(b"#  Item                 Qty\n")
+    lines.append(b"-" * 32 + b"\n")
+
+    for idx, (ti, delta) in enumerate(items_with_delta, start=1):
+        if ti.source_type == 'menu':
+            # Fetch fresh object name
+            from .models import MenuItem
+            try:
+                obj = MenuItem.objects.get(pk=ti.source_id)
+                name = obj.name
+            except MenuItem.DoesNotExist:
+                name = "Unknown Item"
+        else:
+            from .models import Deal
+            try:
+                obj = Deal.objects.get(pk=ti.source_id)
+                name = obj.name
+            except Deal.DoesNotExist:
+                name = "Unknown Deal"
+        
+        # Formatting: Index (2 chars) + Name (18 chars) + Qty (3 chars)
+        name = name[:18]
+        idx_b = str(idx).rjust(2).encode()
+        name_b = name.ljust(18).encode("ascii", "ignore")
+        qty_b = str(delta).rjust(3).encode()
+        
+        lines.append(idx_b + b"  " + name_b + b"  " + qty_b + b"\n")
+
+    lines.append(b"\n\n\n\n\n")
+    # -- Cut Paper --
+    lines.append(b"\n" * 4)
+    lines.append(GS + b"\x56" + b"\x00") 
+
+    return b"".join(lines)
+
+
+
+from django.urls import reverse_lazy
+from django.views.generic import UpdateView, CreateView, DeleteView, ListView
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.shortcuts import render, redirect
+from django.contrib import messages
+
+from .models import POSSettings, PrintStation
+from .forms import POSSettingsForm, PrintStationForm
+
+# --- Configuration Dashboard (Settings + Station List) ---
+class ConfigurationView(LoginRequiredMixin, View):
+    template_name = 'settings/configuration.html'
+
+    def get(self, request):
+        # Ensure Settings exist
+        settings_obj, created = POSSettings.objects.get_or_create(id=1, defaults={'restaurant_name': 'My Restaurant'})
+        
+        settings_form = POSSettingsForm(instance=settings_obj)
+        stations = PrintStation.objects.all()
+
+        return render(request, self.template_name, {
+            'settings_form': settings_form,
+            'stations': stations
+        })
+
+    def post(self, request):
+        # Handle the General Settings Form Post
+        settings_obj = POSSettings.objects.first()
+        form = POSSettingsForm(request.POST, request.FILES, instance=settings_obj)
+        
+        if form.is_valid():
+            form.save()
+            messages.success(request, "General settings updated successfully.")
+            return redirect('configuration')
+        
+        # If invalid, re-render
+        stations = PrintStation.objects.all()
+        return render(request, self.template_name, {
+            'settings_form': form,
+            'stations': stations
+        })
+
+# --- Print Station CRUD ---
+class PrintStationCreateView(LoginRequiredMixin, CreateView):
+    model = PrintStation
+    form_class = PrintStationForm
+    template_name = 'settings/station_form.html'
+    success_url = reverse_lazy('configuration')
+
+    def form_valid(self, form):
+        messages.success(self.request, "Print Station created.")
+        return super().form_valid(form)
+
+class PrintStationUpdateView(LoginRequiredMixin, UpdateView):
+    model = PrintStation
+    form_class = PrintStationForm
+    template_name = 'settings/station_form.html'
+    success_url = reverse_lazy('configuration')
+
+    def form_valid(self, form):
+        messages.success(self.request, "Print Station updated.")
+        return super().form_valid(form)
+
+class PrintStationDeleteView(LoginRequiredMixin, DeleteView):
+    model = PrintStation
+    success_url = reverse_lazy('configuration')
+    
+    def get(self, request, *args, **kwargs):
+        return self.post(request, *args, **kwargs) 
+    
+
+
+#modifications v3 
+

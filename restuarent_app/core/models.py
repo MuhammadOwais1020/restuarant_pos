@@ -27,6 +27,27 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
 
+
+class Customer(models.Model):
+    name = models.CharField(max_length=100)
+    phone = models.CharField(max_length=20, unique=True, help_text="Primary identifier for Udhaar")
+    address = models.TextField(blank=True, null=True)
+    
+    # Positive balance = Customer owes restaurant (Udhaar)
+    # Negative balance = Restaurant owes customer (Advance)
+    current_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.name} ({self.phone})"
+    
+    @property
+    def abs_balance(self):
+        """Returns the absolute value of the balance (removes negative sign)."""
+        return abs(self.current_balance)
+    
+
 class Unit(models.Model):
     UNIT_TYPES = [
         ('mass', 'Mass'),
@@ -111,6 +132,21 @@ class MenuItem(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     rank = models.IntegerField(null=True, blank=True)
 
+    # Inventory tracking fields
+    weight = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, help_text="Weight/quantity of the item")
+    
+    UNIT_CHOICES = [
+        ('kg', 'Kilogram'),
+        ('g', 'Gram'),
+        ('l', 'Liter'),
+        ('ml', 'Milliliter'),
+        ('pcs', 'Pieces'),
+        ('doz', 'Dozen'),
+        ('box', 'Box'),
+        ('pack', 'Pack'),
+    ]
+    unit = models.CharField(max_length=10, choices=UNIT_CHOICES, null=True, blank=True, help_text="Unit of measurement")
+
     # Allow overriding station per item
     station = models.ForeignKey(PrintStation, on_delete=models.SET_NULL, null=True, blank=True, related_name="menu_items")
 
@@ -124,7 +160,13 @@ class MenuItem(models.Model):
         if self.category.default_station:
             return self.category.default_station
         return None
-
+    
+    def get_weight_display(self):
+        """Returns formatted weight with unit."""
+        if self.weight and self.unit:
+            return f"{self.weight} {self.get_unit_display()}"
+        return None
+    
 
 # ---------- Deals (New) ----------
 class Deal(models.Model):
@@ -208,6 +250,7 @@ class Order(models.Model):
     service_charge = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     customer_name = models.CharField(max_length=50, null=True, blank=True)
     mobile_no = models.CharField(max_length=20, null=True, blank=True)
+    customer = models.ForeignKey('Customer', on_delete=models.SET_NULL, null=True, blank=True, related_name="orders")
     customer_address = models.CharField(max_length=100, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -359,6 +402,7 @@ class OrderItem(models.Model):
 class Payment(models.Model):
     PAYMENT_METHODS = [
         ('cash', 'Cash'),
+        ('credit', 'Credit / Udhaar'),
         ('jazz cash', 'Jazz Cash'),
         ('easypaisa', 'Easypaisa'),
         ('bank', 'Bank'),
@@ -1183,3 +1227,110 @@ class TokenCounter(models.Model):
 
     def __str__(self):
         return f"{self.service_day}: {self.last}"
+    
+# core/models.py
+
+class PaymentReceived(models.Model):
+    PARTY_Types = [
+        ('customer', 'Registered Customer'),
+        ('supplier', 'Supplier (Refund/Return)'),
+    ]
+    PAYMENT_SOURCE = [
+        ('cash', 'Cash (Restaurant Cash)'),
+        ('bank', 'Bank Account'),
+    ]
+
+    date = models.DateField(default=timezone.now)
+    party_type = models.CharField(max_length=10, choices=PARTY_Types, default='customer')
+    
+    # Links (One will be filled, the other null)
+    customer = models.ForeignKey('Customer', on_delete=models.SET_NULL, null=True, blank=True, related_name="payments_received")
+    supplier = models.ForeignKey('Supplier', on_delete=models.SET_NULL, null=True, blank=True, related_name="refunds_received")
+
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    description = models.CharField(max_length=255, blank=True)
+    
+    # Where is money going?
+    payment_method = models.CharField(max_length=10, choices=PAYMENT_SOURCE, default='cash')
+    bank_account = models.ForeignKey('BankAccount', on_delete=models.SET_NULL, null=True, blank=True)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Link to CashFlow so ledger stays in sync
+    cashflow = models.OneToOneField('CashFlow', on_delete=models.SET_NULL, null=True, blank=True, related_name='linked_income')
+
+    def __str__(self):
+        name = self.customer.name if self.customer else (self.supplier.name if self.supplier else "Unknown")
+        return f"Recv {self.amount} from {name}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.party_type == 'customer' and not self.customer:
+            raise ValidationError("Please select a Customer.")
+        if self.party_type == 'supplier' and not self.supplier:
+            raise ValidationError("Please select a Supplier.")
+        if self.payment_method == 'bank' and not self.bank_account:
+            raise ValidationError("Please select a Bank Account.")
+        if self.amount <= 0:
+            raise ValidationError("Amount must be greater than 0.")
+
+    @transaction.atomic
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_amount = 0
+        
+        if not is_new:
+            # If editing, get the old object to revert balance changes
+            old_obj = PaymentReceived.objects.get(pk=self.pk)
+            old_amount = old_obj.amount
+            # Revert old customer balance change
+            if old_obj.customer:
+                old_obj.customer.current_balance += old_obj.amount # Add it back (revert payment)
+                old_obj.customer.save()
+
+        super().save(*args, **kwargs)
+
+        # 1. Update Customer Balance (Money In = Balance Decreases)
+        if self.customer:
+            self.customer.current_balance -= self.amount
+            self.customer.save()
+
+        # 2. Sync with CashFlow
+        from .models import CashFlow
+        desc = f"Received from {self.customer.name if self.customer else self.supplier.name}"
+        if self.description:
+            desc += f" - {self.description}"
+
+        if not self.cashflow:
+            cf = CashFlow.objects.create(
+                date=self.date,
+                flow_type=CashFlow.IN, # Money Coming IN
+                amount=self.amount,
+                bank_account=self.bank_account if self.payment_method == 'bank' else None,
+                description=desc,
+                created_by=self.created_by
+            )
+            self.cashflow = cf
+            # Save again to link the ID (avoid recursion by updating queryset)
+            PaymentReceived.objects.filter(pk=self.pk).update(cashflow=cf)
+        else:
+            cf = self.cashflow
+            cf.date = self.date
+            cf.amount = self.amount
+            cf.bank_account = self.bank_account if self.payment_method == 'bank' else None
+            cf.description = desc
+            cf.save()
+
+    @transaction.atomic
+    def delete(self, *args, **kwargs):
+        # 1. Revert Customer Balance
+        if self.customer:
+            self.customer.current_balance += self.amount # Add debt back
+            self.customer.save()
+        
+        # 2. Remove Cashflow
+        if self.cashflow:
+            self.cashflow.delete()
+            
+        super().delete(*args, **kwargs)

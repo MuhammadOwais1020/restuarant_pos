@@ -29,3 +29,58 @@ def send_to_printer(raw_bytes: bytes, printer_name: str = None) -> None:
     except Exception as e:
         print(f"CRITICAL PRINTER ERROR on {target_printer}: {e}")
         # We catch the error so the order still saves even if print fails
+
+
+
+def build_market_list_bytes(items):
+    """
+    Generates ESC/POS bytes for a simple shopping/market list.
+    items: list of dicts [{'name': 'Tomato', 'qty': 5, 'unit': 'kg'}, ...]
+    """
+    ESC = b"\x1B"
+    GS  = b"\x1D"
+    lines = []
+
+    # 1. Header
+    lines.append(ESC + b"\x40")          # Initialize
+    lines.append(ESC + b"\x61" + b"\x01") # Center
+    lines.append(ESC + b"\x21" + b"\x20") # Double Width
+    lines.append(b"ORDER LIST\n")
+    lines.append(ESC + b"\x21" + b"\x00") # Normal text
+    lines.append(b"\n")
+    
+    # 2. Date
+    from django.utils import timezone
+    now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M %p")
+    lines.append(ESC + b"\x61" + b"\x00") # Left align
+    lines.append(f"Date: {now}\n".encode('ascii'))
+    lines.append(b"-" * 32 + b"\n")
+
+    # 3. Columns
+    # Item (Left) | Qty (Right)
+    lines.append(ESC + b"\x45" + b"\x01") # Bold ON
+    lines.append(b"Item                    Qty\n")
+    lines.append(ESC + b"\x45" + b"\x00") # Bold OFF
+    lines.append(b"-" * 32 + b"\n")
+
+    # 4. Items Loop
+    for it in items:
+        name = it.get('name', 'Unknown')[:20] # Truncate name
+        qty = str(it.get('qty', 0))
+        unit = it.get('unit', '')
+        
+        # Format: Name (left 20) + Qty/Unit (right rest)
+        qty_str = f"{qty} {unit}"
+        
+        name_bytes = name.ljust(20).encode('ascii', 'ignore')
+        qty_bytes = qty_str.rjust(11).encode('ascii', 'ignore') # 32 - 1 (space) - 20 = 11 approx
+        
+        lines.append(name_bytes + b" " + qty_bytes + b"\n")
+        lines.append(b"................................\n") # Optional dotted line separator
+
+    lines.append(b"\n\n\n\n")
+    
+    # 5. Cut
+    lines.append(GS + b"\x56" + b"\x00")
+    
+    return b"".join(lines)

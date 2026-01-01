@@ -72,6 +72,54 @@
     <i class="fa fa-receipt fa-3x"></i>
     <h3>Order List</h3>
   </a>
+
+  <a href="{% url 'purchase_order_create' %}" class="card">
+    <i class="fa fa-box fa-3x"></i>
+    <h3>New Purchasing</h3>
+  </a>
+  
+  <a href="{% url 'purchase_order_list' %}" class="card">
+    <i class="fa fa-box fa-3x"></i>
+    <h3>Purchasing Record</h3>
+  </a>
+    <!-- Suppliers Card -->
+  <a href="{% url 'supplier_list' %}" class="card">
+    <i class="fa fa-truck fa-3x"></i>
+    <h3>Suppliers</h3>
+  </a>
+  <a href="{% url 'customer_list' %}" class="card">
+    <i class="fa fa-users fa-3x"></i>
+    <h3>Customers (Udhaar)</h3>
+  </a>
+  <a href="{% url 'payment_received_list' %}" class="card">
+    <i class="fa fa-hand-holding-usd fa-3x"></i>
+    <h3>Receive Payments</h3>
+  </a>
+  <!-- Raw Materials Card -->
+  <a href="{% url 'raw_material_list' %}" class="card">
+    <i class="fa fa-box fa-3x"></i>
+    <h3>Stock</h3>
+  </a>
+
+  <a href="{% url 'staff_list' %}" class="card">
+  <i class="fa fa-users-cog fa-3x"></i>
+  <h3>Staff Management</h3>
+</a>
+<!-- Expenses -->
+<a href="{% url 'expense_list' %}" class="card">
+  <i class="fa fa-money-bill-wave fa-3x"></i>
+  <h3>Expenses</h3>
+</a>
+
+<a href="{% url 'ledger_home' %}" class="card">
+  <i class="fa fa-book fa-3x"></i>
+  <h3>Ledger (Khata)</h3>
+</a>
+
+<a href="{% url 'market_list_print' %}" class="card">
+  <i class="fa fa-shopping-basket fa-3x"></i>
+  <h3>Market List (Print)</h3>
+</a>
   <!-- Categories Card -->
   <a href="{% url 'category_list' %}" class="card">
     <i class="fa fa-folder fa-3x"></i>
@@ -105,23 +153,7 @@
     <h3>Reports</h3>
   </a>
 
-  <!-- Suppliers Card -->
-  <a href="{% url 'supplier_list' %}" class="card">
-    <i class="fa fa-truck fa-3x"></i>
-    <h3>Suppliers</h3>
-  </a>
 
-  <!-- Raw Materials Card -->
-  <a href="{% url 'raw_material_list' %}" class="card">
-    <i class="fa fa-box fa-3x"></i>
-    <h3>Stock</h3>
-  </a>
-
-  <!-- Stock Purchases / Purchase Orders Card -->
-  <a href="{% url 'purchase_order_list' %}" class="card">
-    <i class="fa fa-box fa-3x"></i>
-    <h3>Purchase Orders</h3>
-  </a>
 <!-- Recipes Card -->
 <a href="{% url 'recipe_list' %}" class="card">
   <i class="fa fa-book-open fa-3x"></i>
@@ -170,21 +202,6 @@
 <a href="{% url 'bankmovement_list' %}" class="card">
   <i class="fa fa-right-left fa-3x"></i>
   <h3>Bank Cash Movements</h3>
-</a>
-
-<a href="{% url 'staff_list' %}" class="card">
-  <i class="fa fa-users-cog fa-3x"></i>
-  <h3>Staff Management</h3>
-</a>
-<!-- Expenses -->
-<a href="{% url 'expense_list' %}" class="card">
-  <i class="fa fa-money-bill-wave fa-3x"></i>
-  <h3>Expenses</h3>
-</a>
-
-<a href="{% url 'ledger_home' %}" class="card">
-  <i class="fa fa-book fa-3x"></i>
-  <h3>Ledger (Khata)</h3>
 </a>
 
 </main>

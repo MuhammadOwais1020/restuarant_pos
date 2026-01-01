@@ -1,33 +1,18 @@
-{# core/templates/orders/order_form.html #}
-{% extends 'base.html' %}
-
-{% block title %}
-  {% if order %}
-    Edit Order #{{ order.number }}
-  {% else %}
-    New Order
-  {% endif %}
-{% endblock %}
-
-
-{% block extra_head %}
+{% extends 'base.html' %} {% block title %} {% if order %} Edit Order #{{ order.number }} {% else %} New Order {% endif %} {% endblock %} {% block extra_head %}
 <style>
-  /* --------------------------------------------------------------
-     Order Filling Page Styles (order_form.html)
-     -------------------------------------------------------------- */
-
   :root {
     --color-primary: #ff5722;
     --color-primary-dark: #e64a19;
     --color-bg: #f4f7fa;
     --color-text: #333;
-    --shadow-sm: 0 2px 6px rgba(0,0,0,0.1);
+    --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.1);
     --radius-sm: 4px;
     --space-xs: 4px;
     --space-sm: 8px;
     --space-md: 16px;
     --space-lg: 24px;
     --space-xl: 60px; /* must match the 60px header in base.html */
+    --color-order-bg: #fffb80;
   }
 
   /* Reset & Base */
@@ -36,10 +21,11 @@
     padding: 0;
     box-sizing: border-box;
   }
-  html, body {
+  html,
+  body {
     width: 100%;
     height: 100%;
-    font-family: 'Segoe UI', sans-serif;
+    font-family: "Segoe UI", sans-serif;
     background: var(--color-bg);
     color: var(--color-text);
     overflow: hidden; /* Prevent scrolling of the entire page */
@@ -60,7 +46,6 @@
     overflow: hidden;
   }
 
-
   /* -------------------------------------------------------------
      LEFT PANE: Order Details (+ Items Table + Totals)
      ------------------------------------------------------------- */
@@ -71,6 +56,7 @@
     flex-direction: column;
     border-right: 1px solid #e0e0e0;
     overflow: hidden; /* only inner scrolling */
+    height: calc(100dvh - 62px);
   }
 
   /* Order Header (Order #, DateTime, Token) */
@@ -138,20 +124,25 @@
   /* Totals Section (fixed height, not scrollable) */
   .totals {
     padding: var(--space-md);
-    background: var(--color-bg);
+    background: #d4ffd6;
     border-top: 1px solid #e0e0e0;
     flex: none; /* stays visible above the action buttons */
   }
-  .totals div {
+  .totals .totals-items {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     margin-bottom: var(--space-xs);
     font-size: 0.95rem;
+    gap: 10px;
+    align-items: center;
   }
-  .totals div:last-child {
-    font-weight: 700;
-    font-size: 1rem;
-    margin-top: var(--space-sm);
+  .totals > .totals-items:first-child {
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 10px;
+  }
+  .totals > .totals-items:last-child {
+    border-top: 1px solid #ccc;
+    padding-top: 10px;
   }
   .totals input[type="number"] {
     width: 80px;
@@ -160,7 +151,6 @@
     border: 1px solid #ccc;
     border-radius: var(--radius-sm);
   }
-
 
   /* -------------------------------------------------------------
      RIGHT PANE: Search + Categories + Items (80%) & Action Buttons (20%)
@@ -171,11 +161,12 @@
     display: flex;
     flex-direction: column;
     overflow: hidden; /* only inner scroll */
+    justify-content: space-between;
+    height: calc(100dvh - 62px);
   }
 
   /* === TOP 80% of right pane: “search + categories + items” === */
   .right-main {
-    flex: 0 0 80%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -184,10 +175,11 @@
   /* Search Bar (always visible at very top of right pane) */
   .search-bar-order {
     display: flex;
-    padding: var(--space-xs) var(--space-md);
-    background: #fff;
+    padding: var(--space-md);
+    background: var(--color-order-bg);
     box-shadow: var(--shadow-sm);
     flex: none;
+    padding-bottom: var(--space-xs);
   }
   .search-bar-order input[type="text"] {
     flex: 1;
@@ -211,20 +203,22 @@
   /* Categories Row (horizontal scroll, second row in right pane) */
   .categories-row {
     display: flex;
-    overflow-x: auto;
-    padding: var(--space-xs) var(--space-md);
-    background: #fff;
+    padding: var(--space-md);
+    background: var(--color-order-bg);
     border-bottom: 1px solid #e0e0e0;
     flex: none;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 14px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 9;
   }
   .category-card {
     flex: 0 0 auto;
-    width: 100px;
-    height: 100px;
-    margin-right: var(--space-md);
+    padding-inline: 10px;
+    height: 80px;
     background: #fff;
     border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-sm);
     text-align: center;
     cursor: pointer;
     transition: transform 0.2s;
@@ -232,6 +226,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    border: 1px solid #ccc;
   }
   .category-card:hover {
     transform: translateY(-4px);
@@ -239,62 +234,81 @@
   .category-card.selected {
     border: 2px solid var(--color-primary);
   }
+  .category-card img {
+    object-fit: contain;
+  }
   .category-card img,
   .category-card i {
     font-size: 2rem;
     margin-bottom: var(--space-xs);
-    width: 100px; /* force 100px width so all category cards match exactly */
+    width: 70px;
     object-fit: contain;
+    height: 40px;
+  }
+  .category-card i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   .category-card span {
-    font-size: 0.85rem;
+    font-size: 14px;
     color: var(--color-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-weight: bold;
   }
 
   /* Menu Items Grid (fills the rest of “right-main,” scrollable) */
   .menu-items-grid {
-    flex: 1;
     overflow-y: auto;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
     gap: var(--space-md);
     padding: var(--space-md);
     background: var(--color-bg);
   }
-  .item-card {
+  .item-card,
+  .deal-card {
     background: #fff;
     border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-sm);
     text-align: center;
-    padding: var(--space-xs);
     cursor: pointer;
     transition: transform 0.2s;
     display: flex;
     flex-direction: column;
     align-items: center;
+    padding-block: 10px;
+    border: 1px solid #000;
   }
-  .item-card:hover {
+  .item-card:hover,
+  .deal-card:hover {
     transform: translateY(-4px);
   }
-  .item-card img {
-    width: 100px;
-    height: 100px;
+  .item-card img,
+  .deal-card img {
+    width: 70px;
+    height: 70px;
     object-fit: contain;
     border-radius: var(--radius-sm);
     margin-bottom: var(--space-xs);
   }
-  .item-card i {
+  .item-card i,
+  .deal-card i {
     font-size: 2rem;
     margin-bottom: var(--space-xs);
+    height: 70px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
-  .item-card span {
-    font-size: 0.85rem;
+  .item-card span,
+  .deal-card span {
+    font-size: 1rem;
     color: var(--color-text);
     text-align: center;
     margin-top: var(--space-xs);
+    font-weight: 700;
   }
 
   /* (Optional) If you ever want a “Deals”‐only section below, you’d put it similarly:
@@ -315,14 +329,16 @@
     flex: 1;
     margin: 0 var(--space-xs);
     padding: var(--space-sm);
+    padding-block: 18px;
     border: none;
     border-radius: var(--radius-sm);
     color: #fff;
-    font-size: 0.95rem;
+    font-size: 20px;
     display: inline-flex;
-    align-items: center;
+    align-items: flex-end;
     justify-content: center;
     transition: background 0.3s;
+    height: 70%;
   }
   .btn-reset {
     background: #e74c3c;
@@ -370,44 +386,384 @@
   .order-left::-webkit-scrollbar-thumb,
   .menu-items-grid::-webkit-scrollbar-thumb,
   .categories-row::-webkit-scrollbar-thumb {
-    background-color: rgba(0,0,0,0.1);
+    background-color: rgba(0, 0, 0, 0.1);
     border-radius: var(--radius-sm);
   }
+
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+    margin: 0 10px;
+  }
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+  }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 24px;
+  }
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+  input:checked + .slider {
+    background-color: #4caf50;
+  }
+
+    input:checked + .food-panda {
+    background-color: #FF2B85;
+  }
+
+  input:checked + .slider:before {
+    transform: translateX(26px);
+  }
+  /* Hover effect */
+  .switch:hover .slider {
+    opacity: 0.9;
+  }
+
+  .table-selector {
+    padding: var(--space-md);
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  .tables-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: var(--space-xs);
+  }
+  .table-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--space-sm);
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm);
+    background: #f9f9f9;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .table-btn i {
+    margin-bottom: var(--space-xs);
+  }
+  .table-btn.selected {
+    border-color: var(--color-primary);
+    background: #fff0eb;
+  }
+  .table-btn .status {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--color-primary);
+    color: #fff;
+    font-size: 0.75rem;
+    padding: 2px 4px;
+    border-radius: 2px;
+  }
+
+  .table-btn {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--space-sm);
+    background: #f4f4f4;
+    border: 1px solid #ccc;
+    border-radius: var(--radius-sm);
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  /* ─── Occupied (“active”) tables get a green-tint & border ───────── */
+  .table-btn.active {
+    background: #e8f5e9; /* light green background */
+    border-color: #4caf50; /* green border */
+  }
+
+  /* ─── Status badge on active tables ───────────────────────────────── */
+  .table-btn .status {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: #4caf50; /* same green */
+    color: white;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  /* ─── “Selected” table (the one you’re currently editing) ─────────── */
+  .table-btn.selected {
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+
+  /* ─── Ensure statuses don’t clash ─────────────────────────────────── */
+  .table-btn.active.selected {
+    box-shadow: 0 0 0 2px var(--color-primary);
+  }
+  .toggle-switch-container {
+    display: flex;
+    padding: 10px;
+  }
+  .toggle-actions {
+    display: flex;
+    align-items: center;
+  }
+  .right-bottom-actions {
+    margin-bottom: 10px;
+  }
+  .totals-calculations {
+    display: flex;
+    align-items: center;
+    gap: 5%;
+    justify-content: flex-end;
+    padding-block: 10px;
+  }
+
+
+.table-btn span{
+  font-size: 16px;
+  font-weight: bold;
+}
+  .container-food-panda, .container-food-panda th{
+    background: #FF2B85 !important;
+    color: white;
+  }
+
+/* General container styling */
+.waiter-selector {
+    padding: 1rem;
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;  /* Space between elements */
+}
+
+/* Label styling */
+.waiter-selector label {
+    font-weight: bold;
+    font-size: 14px;
+    margin-right: 10px;
+}
+
+/* Select box styling */
+.waiter-selector select {
+    padding: .5rem;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    width: 100%;
+
+}
+
+/* Styling for Payment Method section */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.form-group label {
+    margin-bottom: 8px;
+}
+
+/* Toggle switch container styling */
+.toggle-source {
+    display: flex;
+    align-items: center;
+    gap: 10px;  /* Space between label and toggle */
+}
+
+/* Toggle switch styling */
+.toggle-switch-container {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    border-radius: 50%;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: .4s;
+}
+
+
+.order-items-table {
+  position: relative;   /* needed for the absolute watermark */
+}
+
+.order-items-table .watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 4rem;
+  font-weight: bold;
+  color: rgba(0,0,0,0.1);
+  white-space: nowrap;
+  pointer-events: none; /* clicks pass through */
+  z-index: 0;
+}
+
+.order-items-table table {
+  position: relative;
+  z-index: 1;  /* so the table sits above the watermark */
+}
+
+
+#print-token-btn:hover, .take-away-button:hover {
+  border-color: var(--color-primary);
+}
+
+.take-away-button, #print-token-btn{
+      display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    gap: 5px;
+    font-weight: bold;
+}
+
+.active-class{
+  background: #4caf4fda; 
+border: none;
+}
+
+/* place this in your <style> block (or your CSS file) */
+.customer-info-row {
+  display: flex;
+
+  padding: 10px;
+}
+
+.customer-info-row .form-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-info-row label {
+  font-weight: 600;
+  margin-bottom: var(--space-xs);
+  font-size: 0.95rem;
+}
+
+.customer-info-row input[type="text"] {
+  padding: var(--space-sm) var(--space-md);
+  font-size: 0.9rem;
+  border: 1px solid #ccc;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.customer-info-row input[type="text"]:focus {
+  border-color: var(--color-primary);
+}
+
+#customer-info-row{
+  display: none;
+}
 </style>
-{% endblock %}
-
-
-{% block content %}
+{% endblock %} {% block content %}
 <div class="order-container">
   <!-- ===== LEFT PANE: Order Details ===== -->
   <div class="order-left">
     <!-- Order Header -->
     <div class="order-header">
       {% if order %}
-        <h2><i class="fa fa-receipt"></i> Edit Order #{{ order.number }}</h2>
+      <h2><i class="fa fa-receipt"></i> Edit Order #{{ order.number }}</h2>
       {% else %}
-        <h2><i class="fa fa-plus"></i> New Order</h2>
+      <h2><i class="fa fa-plus"></i> New Order</h2>
       {% endif %}
-      <span>
-        Date:
-        {% if order %}
-          {{ order.created_at|date:"Y-m-d H:i" }}
-        {% else %}
-          {{ now|date:"Y-m-d H:i" }}
-        {% endif %}
-      </span>
-      <span>
-        Token #:
-        {% if order and order.token_number %}
-          {{ order.token_number }}
-        {% else %}
-          &mdash;
-        {% endif %}
-      </span>
+      <span> Date: {% if order %} {{ order.created_at|date:"Y-m-d H:i" }} {% else %} {{ now|date:"Y-m-d H:i" }} {% endif %} </span>
+      <span> Token #: {% if order and order.token_number %} {{ order.token_number }} {% else %} &mdash; {% endif %} </span>
     </div>
+    <div class="table-selector">
+      <h3 id="table-heading" style="font-size: 26px;">Take-Away Customer</h3>
+      <div class="tables-grid">
+        {% for table in tables %}
+        <button class="table-btn {% if table.has_items %} active{% endif %} {% if order and order.table_id == table.id %} selected{% endif %}" data-table-id="{{ table.id }}">
+          <i class="fa fa-chair fa-2x"></i>
+          <span>Table {{ table.number }}</span>
 
+          {% if table.has_items %}
+          <span class="status">₨{{ table.current_order_total }}</span>
+          {% endif %}
+        </button>
+        {% endfor %}
+
+          <button id="print-token-btn" class="btn-action">
+            <i class="fa fa-print"></i> Print Token
+          </button>
+
+          <button id="btn-switch-table" class="btn-action" style="background:#f39c12; color:#fff;">
+            <i class="fa fa-exchange-alt"></i> Switch Table
+          </button>
+
+          <button class="take-away-button" id="take-away-button" data-table-id="">
+            <i class="fa fa-user fa-2x"></i>
+            <span>Take Away</span>
+          </button>
+
+      </div>
+    </div>
     <!-- Order Items Table (scrollable) -->
     <div class="order-items-table">
+      <!-- watermark overlay -->
+      <div id="order-watermark" class="watermark">Take Away Customer</div>
       <table>
         <thead>
           <tr>
@@ -415,59 +771,44 @@
             <th>Item / Deal</th>
             <th>Qty</th>
             <th>Unit Price</th>
+            <th>Added</th>
             <th>Amount</th>
             <th>Action</th>
           </tr>
         </thead>
         <tbody id="order-items-body">
-          {# JS will insert <tr data-index="…"> here #}
+          
+          </tr>
         </tbody>
       </table>
     </div>
 
     <!-- Totals (always visible, below the table) -->
     <div class="totals">
-      <div>
-        <span>Subtotal:</span>
-        <span id="subtotal-amt">0.00</span>
+      <div class="totals-items">
+        <strong>Subtotal:</strong>
+        <strong id="subtotal-amt">0.00</strong>
       </div>
-      <div>
-        <span>Discount:</span>
-        <input
-          id="discount"
-          type="number"
-          min="0"
-          step="0.01"
-          value="{% if order %}{{ order.discount }}{% else %}0{% endif %}"
-        >
+      <div class="totals-calculations">
+        <div class="totals-items">
+          <span>Discount:</span>
+          <input id="discount" type="number" min="0" step="0.01" value="{% if order %}{{ order.discount }}{% else %}0{% endif %}" />
+        </div>
+        <div class="totals-items">
+          <span>Tax (%):</span>
+          <input id="tax-perc" type="number" min="0" step="0.01" value="{% if order %}{{ order.tax_percentage }}{% else %}0{% endif %}" />
+        </div>
+        <div class="totals-items">
+          <span id="shipping-or-service">Service Charges:</span>
+          <input id="service-charge" type="number" min="0" step="0.01" value="{% if order %}{{ order.service_charge }}{% else %}0{% endif %}" />
+        </div>
       </div>
-      <div>
-        <span>Tax (%):</span>
-        <input
-          id="tax-perc"
-          type="number"
-          min="0"
-          step="0.01"
-          value="{% if order %}{{ order.tax_percentage }}{% else %}0{% endif %}"
-        >
-      </div>
-      <div>
-        <span>Service Charge:</span>
-        <input
-          id="service-charge"
-          type="number"
-          min="0"
-          step="0.01"
-          value="{% if order %}{{ order.service_charge }}{% else %}0{% endif %}"
-        >
-      </div>
-      <div>
+      <div class="totals-items">
         <strong>Grand Total:</strong>
         <strong id="grand-total-amt">0.00</strong>
       </div>
     </div>
   </div>
-
 
   <!-- ===== RIGHT PANE: split 80% (search+categories+items) / 20% (buttons) ===== -->
   <div class="order-right">
@@ -475,28 +816,22 @@
     <div class="right-main">
       <!-- Search Bar (always visible at top of this 80% block) -->
       <div class="search-bar-order">
-        <input id="search-term"
-               type="text"
-               placeholder="Search items or categories …" />
+        <input id="search-term" type="text" placeholder="Search items ..." />
         <button id="search-btn"><i class="fa fa-search"></i></button>
       </div>
 
       <!-- Categories Row (horizontal scroll, second row) -->
       <div class="categories-row" id="categories-row">
         {% for cat in categories %}
-          <div class="category-card" data-cat-id="{{ cat.id }}">
-            {% with first_item=cat.items.first %}
-              {% if first_item and first_item.image %}
-                <img src="{{ first_item.image.url }}" alt="{{ cat.name }}">
-              {% else %}
-                <i class="fa fa-folder fa-2x"></i>
-              {% endif %}
-            {% endwith %}
-            <span>{{ cat.name }}</span>
-          </div>
-        {% endfor %}
-
-        {# “Deals” card always at the end of categories #}
+        <div class="category-card" data-cat-id="{{ cat.id }}">
+          {% with first_item=cat.items.first %} {% if first_item and first_item.image %}
+          <img src="{{ first_item.image.url }}" alt="{{ cat.name }}" />
+          {% else %}
+          <i class="fa fa-folder fa-2x"></i>
+          {% endif %} {% endwith %}
+          <span>{{ cat.name }}</span>
+        </div>
+        {% endfor %} {# “Deals” card always at the end of categories #}
         <div class="category-card" id="deals-button">
           <i class="fa fa-gifts fa-2x"></i>
           <span>Deals</span>
@@ -504,33 +839,158 @@
       </div>
 
       <!-- Menu Items / Deals Grid (fills the rest of this 80% area, scrollable) -->
-      <div class="menu-items-grid" id="menu-items-grid">
-        {# JS will populate with either .item-card or .deal-card #}
-      </div>
+      <div class="menu-items-grid" id="menu-items-grid">{# JS will populate with either .item-card or .deal-card #}</div>
     </div>
 
     <!-- BOTTOM 20%: Action Buttons (Reset / Create/Update / New / Paid) -->
-    <div class="right-actions">
-      <button class="btn-reset btn-action">
-        <i class="fa fa-undo"></i> Reset
-      </button>
-      <button class="btn-create btn-action">
-        {% if order %}
-          <i class="fa fa-save"></i> Update
-        {% else %}
-          <i class="fa fa-cart-plus"></i> Create
-        {% endif %}
-      </button>
-      <button class="btn-new btn-action">
-        <i class="fa fa-plus-circle"></i> New
-      </button>
-      <button class="btn-paid btn-action">
-        <i class="fa fa-money-bill"></i> Paid
-      </button>
+    <div class="right-bottom-actions">
+      <div class="waiter-selector" style="padding:10px; background:#fff; border-bottom:1px solid #e0e0e0;">
+      <div>
+        <label for="waiter-select"><strong id="waiter-or-rider">Waiter:</strong></label>
+      <select id="waiter-select" style="margin-left:.5rem; padding:.25rem;">
+        <option value="">— Unassigned —</option>
+      </select>
+    </div>
+    <div class="form-group">
+          <label for="payment_method">Payment Method</label>
+          <select class="form-control" id="payment_method" name="payment_method">
+            <option value="cash">Cash</option>
+            <option value="credit">Credit / Udhaar / Khata</option>
+            <option value="jazz cash">Jazz Cash</option>
+            <option value="easypaisa">Easypaisa</option>
+            <option value="bank">Bank</option>
+            <option value="card">Card</option>
+          </select>
+    </div>
+    <div class="toggle-source">
+            <label class="toggle-switch-container" for="home-delivery">
+              <span>Home Delivery Order:</span>
+             <label class="switch">
+              <input type="checkbox" id="home-delivery" name="home-delivery" />
+            <span class="slider"></span>  
+            </label>
+            </label>
+    </div>
+
+      </div>
+
+      <!-- Add this where you want the Mobile & Address row -->
+      <div class="customer-info-row" id="customer-info-row">
+        <div class="form-group">
+          <label for="customer_name">Customer Name</label>
+          <input
+            type="text"
+            id="customer_name"
+            name="customer_name"
+            placeholder="Enter customer name"
+          />
+        </div>
+        <div class="form-group">
+          <label for="mobile_no">Mobile No</label>
+          <input
+            type="text"
+            id="mobile_no"
+            name="mobile_no"
+            placeholder="Enter customer mobile number"
+          />
+        </div>
+        <div class="form-group">
+          <label for="customer_address">Customer Address</label>
+          <input
+            type="text"
+            id="customer_address"
+            name="customer_address"
+            placeholder="Enter customer address"
+          />
+        </div>
+      </div>
+
+      <div class="customer-info-row" id="registered-customer-row" style="display: none; background-color: #fff8e1; border: 1px solid #ffe0b2;">
+        <div class="form-group" style="position: relative; width: 100%;">
+          <label for="reg-customer-search" style="color: #e64a19;">
+            <i class="fa fa-user-check"></i> Select Registered Customer (Udhaar)
+          </label>
+          
+          <div style="display: flex; gap: 5px;">
+            <input 
+              type="text" 
+              id="reg-customer-search" 
+              placeholder="Search by Name or Phone..." 
+              autocomplete="off"
+              style="border-color: #ff9800;"
+            />
+            <button id="btn-clear-reg-customer" type="button" style="background: #ccc; border: none; padding: 0 10px; border-radius: 4px; display: none;">
+              <i class="fa fa-times"></i>
+            </button>
+          </div>
+
+          <input type="hidden" id="selected-customer-id" name="customer_id" value="">
+
+          <div id="reg-customer-results" style="
+              display: none;
+              position: absolute;
+              top: 100%;
+              left: 0;
+              right: 0;
+              background: white;
+              border: 1px solid #ccc;
+              max-height: 200px;
+              overflow-y: auto;
+              z-index: 1000;
+              box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          ">
+            </div>
+          
+          <div id="selected-customer-display" style="display: none; margin-top: 5px; font-size: 0.9rem; color: #2e7d32; font-weight: bold;">
+            Selected: <span id="display-name"></span> (Bal: <span id="display-balance"></span>)
+          </div>
+        </div>
+      </div>
+
+      <div class="toggle-actions" style="display:none">
+      <div class="toggle-source">
+            <label class="toggle-switch-container" for="food-panda-source">
+              <span>Food Panda Order:</span>
+             <label class="switch">
+              <input type="checkbox" id="food-panda-source" name="source" />
+            <span class="slider food-panda"></span>  
+            </label>
+            </label>
+      </div>
+        <div>
+          <!-- TOKEN toggle -->
+          <label class="toggle-switch-container">
+            <span>Print Token:</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-token" {% comment %} If you’ve passed in an existing PrintStatus instance to the template, you can do something like: checked="{{ ps.token|yesno:'checked,' }}" In this example, we’ll load status via JS on page‐load (see below). {% endcomment %} >
+              <span class="slider"></span>
+            </label>
+          </label>
+        </div>
+
+        <div id="printstatus-container">
+          <!-- BILL toggle -->
+          <label class="toggle-switch-container">
+            <span>Print Bill:</span>
+            <label class="switch">
+              <input type="checkbox" id="toggle-bill" />
+              <span class="slider"></span>
+            </label>
+          </label>
+        </div>
+      </div>
+      <div class="buttons-actions right-actions">
+        <button class="btn-reset btn-action"><i class="fa fa-undo"></i> Reset</button>
+        <button class="btn-create btn-action" style="display: none" disable>
+          {% if order %}
+          <i class="fa fa-save"></i> Update {% else %} <i class="fa fa-cart-plus"></i> Create {% endif %}
+        </button>
+        <button class="btn-new btn-action" style="display: none"><i class="fa fa-plus-circle"></i> New</button>
+        <button class="btn-paid btn-action"><i class="fa fa-money-bill"></i> Close / Paid</button>
+      </div>
     </div>
   </div>
 </div>
-
 
 {# ------------- Embed JSON Data for JS ------------- #}
 <script id="menu-items-data" type="application/json">
@@ -542,476 +1002,1369 @@
 <script id="existing-items-data" type="application/json">
   {{ existing_items_json|default:"[]"|safe }}
 </script>
+<script id="waiters-data" type="application/json">
+  {{ waiters_json|safe }}
+</script>
+
+<script id="customers-data" type="application/json">
+  {{ all_customers_json|default:"[]"|safe }}
+</script>
 
 
 <script>
-  // ======================
-  // Parse JSON data from server
-  // ======================
-  const allMenuItems = JSON.parse(
-    document.getElementById('menu-items-data').textContent
-  );
-  const allDeals = JSON.parse(
-    document.getElementById('deals-data').textContent
-  );
-  let selectedItems = JSON.parse(
-    document.getElementById('existing-items-data').textContent
-  );
+  // --- time helpers ---
+  function _parseISO(iso) {
+    try { return iso ? new Date(iso) : null; } catch { return null; }
+  }
+  function _pad2(n){ return n < 10 ? '0'+n : ''+n; }
 
-  // If editing an existing order, order.id is not null; otherwise null
-  const editingOrderId = {% if order %}{{ order.id }}{% else %}null{% endif %};
-
-  // Helper: format a number to two decimals
-  function formatPrice(x) {
-    return parseFloat(x).toFixed(2);
+  function formatClock(iso) {
+    const d = _parseISO(iso);
+    if (!d) return '—';
+    // 24h "HH:MM". Use toLocaleTimeString if you prefer locale 12/24.
+    return _pad2(d.getHours()) + ':' + _pad2(d.getMinutes());
   }
 
-  // ======================
-  // LEFT PANE: Render Order‐Items Table & Totals
-  // ======================
-  function recalcTotals() {
-    let subtotal = 0;
-    selectedItems.forEach(it => {
-      subtotal += it.quantity * it.unit_price;
+  function formatAgo(iso) {
+    const d = _parseISO(iso);
+    if (!d) return '';
+    const sec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hrs = Math.floor(min / 60);
+    return `${hrs}h ${min % 60}m ago`;
+  }
+
+  function formatAddedCell(iso) {
+    if (!iso) return '—';
+    return `${formatClock(iso)} (${formatAgo(iso)})`;
+  }
+</script>
+
+
+<script>
+  const watermark = document.getElementById('order-watermark');
+  const foodPandaCheckbox = document.getElementById("food-panda-source");
+  const homeDelivery = document.getElementById("home-delivery");
+  const takeAwayButton = document.getElementById("take-away-button");
+
+
+  // ====== CSRF token helper ======
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+      const cookies = document.cookie.split(";");
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.startsWith(name + "=")) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+
+  // ====== Common function to POST a toggle change ======
+  function postToggle(field, isChecked) {
+    fetch("/printstatus/update/", {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrftoken,
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: `field=${field}&value=${isChecked}`,
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error("Network response was not OK");
+        return response.json();
+      })
+      .then((data) => {
+        if (data.status !== "success") {
+          alert("Error updating print status");
+          // Revert switch if server said “error”
+          const checkbox = document.getElementById(`toggle-${field}`);
+          checkbox.checked = !checkbox.checked;
+        }
+      })
+      .catch((err) => {
+        console.error("Fetch error:", err);
+        alert("Unable to update. Check your connection.");
+        // Revert the switch on failure
+        const checkbox = document.getElementById(`toggle-${field}`);
+        checkbox.checked = !checkbox.checked;
+      });
+  }
+
+  // ====== Attach listeners on DOMContentLoaded ======
+  document.addEventListener("DOMContentLoaded", () => {
+    updateItemPrices();
+    updateItemAmounts();
+    takeAwayButton.addEventListener('click', function(){
+        const tbody = document.getElementById('order-items-body');
+      tbody.innerHTML = '';
+      document.getElementById('order-watermark').textContent = "Take Away";
+      document.getElementById('table-heading').textContent = "Take Away Customer";
+      takeAwayButton.classList.add('active-class');
+      document.getElementById('waiter-or-rider').textContent = "Waiter";
+      document.getElementById('shipping-or-service').textContent = "Service Charges";
+
+      // 1) Clear any previous “table” selection
+  selectedTableId = null;
+
+  // 2) Reset Home-Delivery toggle if you like
+  homeDelivery.checked = false;
+
+  // 3) Clear out the in-memory buffer
+  selectedItems = [];
+  takeAwayButton.addEventListener = "Take Away Customer";
+  document.getElementById("customer-info-row").style.display="flex";
+  document.getElementById('waiter-select').selectedIndex = 0;
+  // 5) Re-render the table
+  renderOrderItemsTable();
     });
+    const foodPandaContainer = document.querySelector('.order-items-table');
+
+    foodPandaCheckbox.addEventListener('change', function() { 
+      updateItemPrices();
+      updateItemAmounts();
+      if (this.checked) {
+            foodPandaContainer.classList.add('container-food-panda');  // Add color change class
+        } else {
+            foodPandaContainer.classList.remove('container-food-panda');  // Remove color change class
+        }
+    });
+
+
+    function updateItemAmounts() {
+    const itemsTable = document.querySelector('.order-items-table tbody'); // Get the table body
+    const rows = itemsTable.querySelectorAll('tr'); // Get all rows in the table
+
+    rows.forEach(row => {
+        const priceCell = row.querySelector('.item-price');  // Assuming each row has a price cell
+        const amountCell = row.querySelector('.item-amount');  // Assuming each row has an amount cell
+        const qtyInput = row.querySelector('.item-qty-input'); // Get the quantity input
+
+        const itemId = row.getAttribute('data-item-id'); // Assuming each row has a data-item-id attribute
+
+        // Find the item based on its ID (replace with your logic to get item)
+        const item = allMenuItems.find(mi => mi.id == itemId);
+
+        if (!item) {
+            console.error("Item not found with ID: ", itemId);
+            return; // Skip this row if the item is not found
+        }
+
+        // Check if it's a Food Panda order
+        let itemPrice = foodPandaCheckbox.checked ? (item.food_panda_price || 0) : item.price;
+
+        // Update the unit price
+        priceCell.innerText = formatPrice(itemPrice);
+
+        // Update the amount based on quantity
+        const qty = parseInt(qtyInput.value, 10);
+        const amount = itemPrice * qty;
+        amountCell.innerText = formatPrice(amount);
+    });
+
+    // After updating amounts, recalculate totals
+    recalcTotals();
+}
+
+
+{% comment %} function recalcTotals() {
+    let subtotal = 0;
+    const itemsTable = document.querySelector('.order-items-table tbody');
+    const rows = itemsTable.querySelectorAll('tr');
+
+    rows.forEach(row => {
+        const quantity = parseInt(row.querySelector('.item-qty-input').value, 10);
+        const price = parseFloat(row.querySelector('.item-price').innerText);
+        subtotal += quantity * price;
+    });
+
     document.getElementById('subtotal-amt').innerText = formatPrice(subtotal);
 
-    const discount = parseFloat(
-      document.getElementById('discount').value
-    ) || 0;
-    const taxPerc = parseFloat(
-      document.getElementById('tax-perc').value
-    ) || 0;
-    const serviceCharge = parseFloat(
-      document.getElementById('service-charge').value
-    ) || 0;
+    const discount = parseFloat(document.getElementById('discount').value) || 0;
+    const taxPerc = parseFloat(document.getElementById('tax-perc').value) || 0;
+    const serviceCharge = parseFloat(document.getElementById('service-charge').value) || 0;
 
     const afterDiscount = Math.max(subtotal - discount, 0);
     const taxAmt = afterDiscount * (taxPerc / 100);
     const grandTotal = afterDiscount + taxAmt + serviceCharge;
 
     document.getElementById('grand-total-amt').innerText = formatPrice(grandTotal);
-  }
+} {% endcomment %}
 
-  function renderOrderItemsTable() {
-    const tbody = document.getElementById('order-items-body');
-    tbody.innerHTML = '';
 
-    selectedItems.forEach((it, idx) => {
-      const amount = (it.quantity * it.unit_price).toFixed(2);
-      const tr = document.createElement('tr');
-      tr.setAttribute('data-index', idx);
-      tr.innerHTML = `
-        <td>${idx + 1}</td>
-        <td>${it.name}</td>
-        <td>
-          <input type="number" class="item-qty-input" min="1" value="${it.quantity}">
-        </td>
-        <td>${formatPrice(it.unit_price)}</td>
-        <td class="item-amount">${amount}</td>
-        <td>
-          <button class="btn-remove-item"><i class="fa fa-trash"></i></button>
-        </td>
-      `;
-      tbody.appendChild(tr);
+        function updateItemPrices() {
+          console.log("update item funciton is calling.....")
+    const itemsTable = document.querySelector('.order-items-table tbody'); // Assuming your table is inside tbody
+    const rows = itemsTable.querySelectorAll('tr'); // Get all rows
+
+    rows.forEach(row => {
+        const priceCell = row.querySelector('.item-price');  // Assuming each row has a price cell
+        const itemId = row.getAttribute('data-item-id'); // Assuming each row has data-item-id attribute
+
+        // Find the item based on its ID
+        const item = allMenuItems.find(mi => mi.id == itemId);
+        console.log(allMenuItems);
+        if (!item) {
+            console.error("Item not found with ID: ", itemId);
+            return; // Skip this row if the item is not found
+        }
+
+        // Check if it's a Food Panda order
+        if (foodPandaCheckbox.checked) {
+            // If Food Panda price is available, update with it, otherwise use 0
+            const foodPandaPrice = item.food_panda_price || 0;
+            priceCell.innerText = formatPrice(foodPandaPrice);
+        } else {
+            // Otherwise, revert to the original price
+            priceCell.innerText = formatPrice(item.price);
+        }
+    });
+}
+
+// Helper function to format price
+function formatPrice(price) {
+    return price.toFixed(2); // You can modify the format based on your needs
+}
+
+    {% comment %} // Recalculate totals when prices change
+    function recalcTotals() {
+        let subtotal = 0;
+        const itemsTable = document.querySelector('.order-items-table tbody');
+        const rows = itemsTable.querySelectorAll('tr');
+
+        rows.forEach(row => {
+            const quantity = parseInt(row.querySelector('.item-qty-input').value, 10);
+            const price = parseFloat(row.querySelector('.item-price').innerText);
+            subtotal += quantity * price;
+        });
+
+        document.getElementById('subtotal-amt').innerText = formatPrice(subtotal);
+
+        const discount = parseFloat(document.getElementById('discount').value) || 0;
+        const taxPerc = parseFloat(document.getElementById('tax-perc').value) || 0;
+        const serviceCharge = parseFloat(document.getElementById('service-charge').value) || 0;
+
+        const afterDiscount = Math.max(subtotal - discount, 0);
+        const taxAmt = afterDiscount * (taxPerc / 100);
+        const grandTotal = afterDiscount + taxAmt + serviceCharge;
+
+        document.getElementById('grand-total-amt').innerText = formatPrice(grandTotal);
+    } {% endcomment %}
+
+    // Event listener to update totals when quantities change
+    document.querySelector('.order-items-table').addEventListener('change', function(event) {
+        if (event.target.matches('.item-qty-input')) {
+            recalcTotals();
+        }
     });
 
-    recalcTotals();
+    // Initial call to update prices based on toggle state
+    updateItemPrices();
+    const tokenCheckbox = document.getElementById("toggle-token");
+    const billCheckbox = document.getElementById("toggle-bill");
+
+    // 1) When user flips “Print Token”:
+    tokenCheckbox.addEventListener("change", () => {
+      postToggle("token", tokenCheckbox.checked);
+    });
+
+    // 2) When user flips “Print Bill”:
+    billCheckbox.addEventListener("change", () => {
+      postToggle("bill", billCheckbox.checked);
+    });
+
+    // ====== (Optional) On initial page‐load, fetch current “token/bill” state ======
+    // If you want the switches to reflect whatever is already in the DB,
+    // you can do a quick GET to an endpoint that returns { token: true/false, bill: true/false }.
+    // For simplicity, we’ll reuse the same update URL but do a GET instead of POST:
+    fetch("/printstatus/update/", {
+      // we’ll modify the view to allow GET → returns current JSON
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    })
+      .then((resp) => {
+        if (!resp.ok) throw new Error("Could not load current status.");
+        return resp.json();
+      })
+      .then((data) => {
+        // data should be: { token: <bool>, bill: <bool> }
+        tokenCheckbox.checked = data.token;
+        billCheckbox.checked = data.bill;
+      })
+      .catch((err) => {
+        console.warn("Could not fetch initial PrintStatus:", err);
+        // If no record exists or error, leave both toggles unchecked (defaults to false).
+      });
+
+
+  });
+
+  // at top of your script you should already have:
+  let editingOrderId = {% if order %}{{ order.id }}{% else %}null{% endif %};
+  
+  let selectedTableId = null;
+  const csrftoken = getCookie('csrftoken');
+  const tableButtons = document.querySelectorAll('.table-btn');
+
+    // ======================
+    // Parse JSON data from server
+    // ======================
+    const allMenuItems = JSON.parse(
+      document.getElementById('menu-items-data').textContent
+    );
+    const allDeals = JSON.parse(
+      document.getElementById('deals-data').textContent
+    );
+    let selectedItems = JSON.parse(
+      document.getElementById('existing-items-data').textContent
+    );
+
+// ── Waiters dropdown ───────────────────────
+const allWaiters = JSON.parse(
+  document.getElementById('waiters-data').textContent
+);
+const waiterSelect = document.getElementById('waiter-select');
+allWaiters.forEach(w => {
+  const opt = document.createElement('option');
+  opt.value = w.id;
+  opt.text  = w.name;
+  waiterSelect.add(opt);
+});
+// If we’re editing an order, pre‑select its waiter:
+{% if order and order.waiter_id %}
+  waiterSelect.value = "{{ order.waiter_id }}";
+{% endif %}
+
+
+    // Helper: format a number to two decimals
+    function formatPrice(x) {
+      return parseFloat(x).toFixed(2);
+    }
+
+    // ======================
+    // LEFT PANE: Render Order‐Items Table & Totals
+    // ======================
+
+    function recalcTotals() {
+      console.log("This funciton is calling......");
+    let subtotal = 0;
+    selectedItems.forEach(it => {
+      subtotal += it.quantity * it.unit_price;
+    });
+    document.getElementById('subtotal-amt').innerText = formatPrice(subtotal);
+
+    const discount     = parseFloat(document.getElementById('discount').value)    || 0;
+    const taxPerc      = parseFloat(document.getElementById('tax-perc').value)    || 0;
+    const serviceCharge= parseFloat(document.getElementById('service-charge').value)|| 0;
+
+    const afterDiscount = Math.max(subtotal - discount, 0);
+    const taxAmt        = afterDiscount * (taxPerc / 100);
+    const grandTotal    = afterDiscount + taxAmt + serviceCharge;
+
+    document.getElementById('grand-total-amt').innerText = formatPrice(grandTotal);
+
+    // ─── NEW: update the badge on the selected table button ──────────────────
+    if (selectedTableId) {
+      const btn = document.querySelector(`.table-btn[data-table-id="${selectedTableId}"]`);
+      if (btn) {
+        let badge = btn.querySelector('.status');
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'status';
+          btn.appendChild(badge);
+        }
+        console.log("Subtotal: " + subtotal)
+        if(subtotal != 0){
+          badge.innerText = `₨${subtotal.toFixed(2)}`;
+          btn.classList.add('active');
+          badge.style.background = "#4caf50";
+        }else if(subtotal == 0){
+          console.log("subtotal else");
+          badge.innerText = `₨${subtotal.toFixed(2)}`;
+          btn.classList.remove('active');
+          badge.innerText = '';
+          badge.style.background = "#f4f4f4";
+        }
+      }
+    }
   }
 
-  // Add an item (or increment quantity if it already exists)
-  function addItemToOrder(type, id, name, unit_price) {
-    const existingIdx = selectedItems.findIndex(
-      it => it.type === type && it.id === id
+
+  function refreshAddedTimes() {
+  document.querySelectorAll('#order-items-body .item-added').forEach(td => {
+    const iso = td.getAttribute('data-added') || '';
+    td.textContent = formatAddedCell(iso);
+  });
+}
+setInterval(refreshAddedTimes, 30000);
+
+
+    function renderOrderItemsTable() {
+      const tbody = document.getElementById('order-items-body');
+      tbody.innerHTML = '';
+
+      selectedItems.forEach((it, idx) => {
+        const amount = (it.quantity * it.unit_price).toFixed(2);
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-source-type', it.type);
+        tr.setAttribute('data-source-id',   it.id);
+        tr.setAttribute('data-index',       idx);
+
+        tr.innerHTML = `
+          <td>${idx + 1}</td>
+          <td>${it.name}</td>
+          <td>
+            <input type="number" class="item-qty-input" min="1" value="${it.quantity}">
+          </td>
+          <td class="item-price">${formatPrice(it.unit_price)}</td>
+          <td class="item-added" data-added="${it.added_at || ''}">${formatAddedCell(it.added_at)}</td>
+          <td class="item-amount">${amount}</td>
+          <td>
+            <button class="btn-remove-item"><i class="fa fa-trash"></i></button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      recalcTotals();
+    }
+
+function saveTableItem(tableId, type, id, price, qty = 1) {
+  fetch(`/tables/${tableId}/items/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+    body: JSON.stringify({
+      source_type: type,
+      source_id: id,
+      unit_price: price,
+      quantity: qty
+    })
+  })
+  .then(async (r) => {
+    // If POST didn’t create/increment (e.g., returns 200/409 or similar),
+    // bump quantity via PUT using current list as source of truth.
+    if (!r.ok) throw new Error('POST failed');
+    return r.json().catch(() => ({}));
+  })
+  .then((json) => {
+    // If backend returns a status we can inspect, keep it; otherwise just reload
+    return loadTableItems(tableId);
+  })
+  .catch(() => {
+    // Fallback: find current qty in selectedItems and PUT qty+1
+    const cur = selectedItems.find(
+      it => it.type === type && Number(it.id) === Number(id)
     );
-    if (existingIdx > -1) {
-      selectedItems[existingIdx].quantity += 1;
+    const newQty = cur ? (Number(cur.quantity) + 1) : 1;
+
+    fetch(`/tables/${tableId}/items/`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrftoken },
+      body: JSON.stringify({
+        source_type: type,
+        source_id: id,
+        quantity: newQty
+      })
+    })
+    .then(() => loadTableItems(tableId))
+    .catch(() => loadTableItems(tableId)); // still refresh UI
+  });
+}
+
+      function loadTableItems(tableId) {
+      if (!tableId) {
+    // no table → just render your in-memory items
+    renderOrderItemsTable();
+    return;
+  }
+      fetch(`/tables/${tableId}/items/`)
+        .then(r => r.json())
+        .then(data => {
+          selectedItems = data.items.map(it => ({
+            type: it.source_type,
+            id: it.source_id,
+            name: it.name,
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            added_at: it.last_added_at || it.created_at || null
+          }));
+          renderOrderItemsTable();
+        });
+    }
+
+    function addItemToOrder(type, id, name, unit_price) {
+  const existingIdx = selectedItems.findIndex(
+    it => it.type === type && Number(it.id) === Number(id)   // ← normalize types
+  );
+  let priceToUse = unit_price;
+
+  if (foodPandaCheckbox.checked) {
+    if (type === 'menu') {
+      const item = allMenuItems.find(mi => Number(mi.id) === Number(id));
+      priceToUse = (item && item.food_panda_price) ? item.food_panda_price : 0;
     } else {
-      selectedItems.push({
-        type,
-        id,
-        name,
-        quantity: 1,
-        unit_price
+      // deal: keep given price (you can adapt if you have deal.food_panda_price in allDeals)
+      priceToUse = unit_price;
+    }
+  }
+
+  if (existingIdx > -1) {
+    selectedItems[existingIdx].quantity += 1;
+    selectedItems[existingIdx].unit_price = priceToUse;
+    if (selectedItems[existingIdx].added_at) {
+      selectedItems[existingIdx].added_at = new Date().toISOString(); // keep your timestamp logic
+    }
+  } else {
+    selectedItems.push({
+      type,
+      id,
+      name,
+      quantity: 1,
+      unit_price: priceToUse,
+      added_at: new Date().toISOString()  // ok if you added timestamps
+    });
+  }
+  renderOrderItemsTable();
+}
+
+
+    function removeItemFromOrder(idx) {
+      selectedItems.splice(idx, 1);
+      renderOrderItemsTable();
+    }
+
+
+    // ======================
+    // RIGHT PANE: Render Categories, Menu‐Items, Deals
+    // ======================
+    function highlightCategory(catId) {
+      document.querySelectorAll('.category-card').forEach(card => {
+        if (card.id === 'deals-button') return;
+        card.classList.toggle('selected',
+          parseInt(card.dataset.catId, 10) === catId
+        );
+      });
+      document.getElementById('deals-button').classList.remove('selected');
+      renderMenuItems(catId, document.getElementById('search-term').value.trim());
+    }
+
+    
+    function renderMenuItems(catId = null, filterTerm = "") {
+      const grid = document.getElementById('menu-items-grid');
+      grid.innerHTML = '';
+      let filtered = allMenuItems;
+
+      if (catId !== null) {
+        filtered = filtered.filter(mi => mi.category_id === catId);
+      }
+      if (filterTerm) {
+        const ft = filterTerm.toLowerCase();
+        filtered = filtered.filter(
+          mi => mi.name.toLowerCase().includes(ft)
+        );
+      }
+
+      filtered.forEach(mi => {
+        const card = document.createElement('div');
+        card.className = 'item-card';
+        card.setAttribute('data-item-id', mi.id);
+        card.setAttribute('data-price', mi.price);
+        card.innerHTML = `
+          ${mi.image_url
+            ? `<img src="${mi.image_url}" alt="${mi.name}">`
+            : `<i class="fa fa-utensils fa-2x"></i>`}
+          <span>${mi.name}</span>
+        `;
+        grid.appendChild(card);
       });
     }
-    renderOrderItemsTable();
-  }
 
-  function removeItemFromOrder(idx) {
-    selectedItems.splice(idx, 1);
-    renderOrderItemsTable();
-  }
+    function showDeals(filterTerm = "") {
+      document.querySelectorAll('.category-card')
+        .forEach(card => card.classList.remove('selected'));
+      document.getElementById('deals-button')
+        .classList.add('selected');
 
+      const grid = document.getElementById('menu-items-grid');
+      grid.innerHTML = '';
+      let filtered = allDeals;
 
-  // ======================
-  // RIGHT PANE: Render Categories, Menu‐Items, Deals
-  // ======================
-  function highlightCategory(catId) {
-    document.querySelectorAll('.category-card').forEach(card => {
-      if (card.id === 'deals-button') return;
-      card.classList.toggle('selected',
-        parseInt(card.dataset.catId, 10) === catId
-      );
-    });
-    document.getElementById('deals-button').classList.remove('selected');
-    renderMenuItems(catId, document.getElementById('search-term').value.trim());
-  }
-
-  function renderMenuItems(catId = null, filterTerm = "") {
-    const grid = document.getElementById('menu-items-grid');
-    grid.innerHTML = '';
-    let filtered = allMenuItems;
-
-    if (catId !== null) {
-      filtered = filtered.filter(mi => mi.category_id === catId);
-    }
-    if (filterTerm) {
-      const ft = filterTerm.toLowerCase();
-      filtered = filtered.filter(
-        mi => mi.name.toLowerCase().includes(ft)
-      );
+      if (filterTerm) {
+        const ft = filterTerm.toLowerCase();
+        filtered = filtered.filter(
+          d => d.name.toLowerCase().includes(ft)
+        );
+      }
+      filtered.forEach(dl => {
+        const card = document.createElement('div');
+        card.className = 'deal-card';
+        card.setAttribute('data-deal-id', dl.id);
+        card.setAttribute('data-price', dl.price);
+        card.innerHTML = `
+          ${dl.image_url
+            ? `<img src="${dl.image_url}" alt="${dl.name}">`
+            : `<i class="fa fa-tag fa-2x"></i>`}
+          <span>${dl.name}</span>
+        `;
+        grid.appendChild(card);
+      });
     }
 
-    filtered.forEach(mi => {
-      const card = document.createElement('div');
-      card.className = 'item-card';
-      card.setAttribute('data-item-id', mi.id);
-      card.setAttribute('data-price', mi.price);
-      card.innerHTML = `
-        ${mi.image_url
-          ? `<img src="${mi.image_url}" alt="${mi.name}">`
-          : `<i class="fa fa-utensils fa-2x"></i>`}
-        <span>${mi.name}</span>
-      `;
-      grid.appendChild(card);
-    });
-  }
 
-  function showDeals(filterTerm = "") {
-    document.querySelectorAll('.category-card')
-      .forEach(card => card.classList.remove('selected'));
-    document.getElementById('deals-button')
-      .classList.add('selected');
+    // ======================
+    // Wire Up Event Handlers on DOMContentLoaded
+    // ======================
+    document.addEventListener('DOMContentLoaded', () => {
 
-    const grid = document.getElementById('menu-items-grid');
-    grid.innerHTML = '';
-    let filtered = allDeals;
+      // --- 1. Get Elements ---
+  const paymentSelect = document.getElementById('payment_method');
+  const simpleCustomerRow = document.getElementById('customer-info-row'); // The existing one
+  const regCustomerRow = document.getElementById('registered-customer-row'); // The new one
+  
+  const regSearchInput = document.getElementById('reg-customer-search');
+  const regResultsDiv = document.getElementById('reg-customer-results');
+  const regHiddenId = document.getElementById('selected-customer-id');
+  const regDisplayDiv = document.getElementById('selected-customer-display');
+  const regClearBtn = document.getElementById('btn-clear-reg-customer');
 
-    if (filterTerm) {
-      const ft = filterTerm.toLowerCase();
-      filtered = filtered.filter(
-        d => d.name.toLowerCase().includes(ft)
-      );
+  // Load Customers from JSON
+  const allCustomers = JSON.parse(document.getElementById('customers-data').textContent || "[]");
+
+  // --- 2. Visibility Logic ---
+  function toggleCustomerFields() {
+    const method = paymentSelect.value;
+    const isDelivery = homeDelivery.checked;
+
+    if (method === 'credit') {
+      // CREDIT: Must show Registered Search, Hide Simple Inputs
+      regCustomerRow.style.display = 'flex';
+      simpleCustomerRow.style.display = 'none';
+      
+      // Focus on search box for convenience
+      setTimeout(() => regSearchInput.focus(), 100);
+    } else {
+      // CASH/OTHER: Hide Registered Search
+      regCustomerRow.style.display = 'none';
+      
+      // Logic for Simple Inputs (Home Delivery)
+      if (isDelivery) {
+        simpleCustomerRow.style.display = 'flex';
+      } else {
+        simpleCustomerRow.style.display = 'none';
+      }
+      
+      // Clear registered selection if switching away from credit
+      clearRegisteredCustomer();
     }
-    filtered.forEach(dl => {
-      const card = document.createElement('div');
-      card.className = 'deal-card';
-      card.setAttribute('data-deal-id', dl.id);
-      card.setAttribute('data-price', dl.price);
-      card.innerHTML = `
-        ${dl.image_url
-          ? `<img src="${dl.image_url}" alt="${dl.name}">`
-          : `<i class="fa fa-tag fa-2x"></i>`}
-        <span>${dl.name}</span>
-      `;
-      grid.appendChild(card);
-    });
   }
 
+  // Attach listeners
+  paymentSelect.addEventListener('change', toggleCustomerFields);
+  homeDelivery.addEventListener('change', toggleCustomerFields); // Re-run logic when delivery toggles
 
-  // ======================
-  // Wire Up Event Handlers on DOMContentLoaded
-  // ======================
-  document.addEventListener('DOMContentLoaded', () => {
-    // 1) If editing, pre‐populate selectedItems from existing JSON
-    if (editingOrderId) {
-      const existingFromServer = JSON.parse(
-        document.getElementById('existing-items-data').textContent
+  // --- 3. Search & Select Logic ---
+  
+  // A. Search Input Event
+  regSearchInput.addEventListener('input', function() {
+    const term = this.value.toLowerCase().trim();
+    regResultsDiv.innerHTML = '';
+    
+    if (term.length < 1) {
+      regResultsDiv.style.display = 'none';
+      return;
+    }
+
+    const filtered = allCustomers.filter(c => 
+      c.name.toLowerCase().includes(term) || c.phone.includes(term)
+    );
+
+    if (filtered.length > 0) {
+      regResultsDiv.style.display = 'block';
+      filtered.forEach(cust => {
+        const div = document.createElement('div');
+        div.style.padding = "8px 10px";
+        div.style.cursor = "pointer";
+        div.style.borderBottom = "1px solid #eee";
+        div.innerHTML = `<strong>${cust.name}</strong> - ${cust.phone} <br><span style="font-size:0.8em; color:gray">Balance: ${cust.balance}</span>`;
+        
+        div.addEventListener('click', () => selectCustomer(cust));
+        // Hover effect
+        div.onmouseover = () => div.style.backgroundColor = "#f0f0f0";
+        div.onmouseout = () => div.style.backgroundColor = "white";
+        
+        regResultsDiv.appendChild(div);
+      });
+    } else {
+      regResultsDiv.style.display = 'none';
+    }
+  });
+
+  // B. Select Function
+  function selectCustomer(cust) {
+    regHiddenId.value = cust.id; // Store ID for backend
+    regSearchInput.value = cust.name; // Show Name in box
+    regResultsDiv.style.display = 'none'; // Hide list
+    
+    // UI Feedback
+    document.getElementById('display-name').textContent = cust.name;
+    document.getElementById('display-balance').textContent = cust.balance;
+    regDisplayDiv.style.display = 'block';
+    regClearBtn.style.display = 'block';
+    regSearchInput.disabled = true; // Lock input
+  }
+
+  // C. Clear Function
+  function clearRegisteredCustomer() {
+    regHiddenId.value = "";
+    regSearchInput.value = "";
+    regSearchInput.disabled = false;
+    regDisplayDiv.style.display = 'none';
+    regClearBtn.style.display = 'none';
+    regResultsDiv.style.display = 'none';
+  }
+
+  regClearBtn.addEventListener('click', () => {
+    clearRegisteredCustomer();
+    regSearchInput.focus();
+  });
+
+  // Hide dropdown if clicking outside
+  document.addEventListener('click', (e) => {
+    if (!regSearchInput.contains(e.target) && !regResultsDiv.contains(e.target)) {
+      regResultsDiv.style.display = 'none';
+    }
+  });
+  
+
+      // grab the search input
+const searchInput = document.getElementById('search-term');
+
+searchInput.addEventListener('input', () => {
+  const term = searchInput.value.trim().toLowerCase();
+
+  // clear any category/deals highlight
+  document.querySelectorAll('.category-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('deals-button').classList.remove('selected');
+
+    renderMenuItems(null, term);
+
+});
+
+
+        homeDelivery.addEventListener('change', () => {
+  refreshWatermark(homeDelivery.checked ? "yes" : "no");
+  });
+      // 1) If editing, pre‐populate selectedItems from existing JSON
+      if (editingOrderId) {
+        const existingFromServer = JSON.parse(
+          document.getElementById('existing-items-data').textContent
+        );
+        selectedItems = existingFromServer.map(it => ({
+          type: it.type,
+          id: it.type === 'menu' ? it.menu_item_id : it.deal_id,
+          name: it.name,
+          quantity: it.quantity,
+          unit_price: it.unit_price
+        }));
+      }
+      renderOrderItemsTable();
+
+      // 2) By default, highlight the first category & show its items
+      const firstCat = document.querySelector(
+        '.category-card:not(#deals-button)'
       );
-      selectedItems = existingFromServer.map(it => ({
+      if (firstCat) {
+        const firstCatId = parseInt(firstCat.dataset.catId, 10);
+        highlightCategory(firstCatId);
+      }
+
+      // 3) Category click → filter items or show deals
+      document.getElementById('categories-row')
+        .addEventListener('click', e => {
+          const card = e.target.closest('.category-card');
+          if (!card) return;
+          if (card.id === 'deals-button') {
+            showDeals(document.getElementById('search-term').value.trim());
+          } else {
+            const catId = parseInt(card.dataset.catId, 10);
+            highlightCategory(catId);
+          }
+        });
+
+          document.getElementById('menu-items-grid').addEventListener('click', e => {
+          const card = e.target.closest('.item-card, .deal-card');
+          if (!card) return;
+          const type = card.classList.contains('deal-card') ? 'deal' : 'menu';
+          const id   = parseInt(card.dataset[ type==='menu' ? 'itemId' : 'dealId' ], 10);
+          const price= parseFloat(card.dataset.price);
+          const waiter = document.getElementById('waiter-select').value || "";
+
+          const mobileNo = document.getElementById("mobile_no").value || "";
+          const customerAddress = document.getElementById("customer_address").value || "";
+          const customerName = document.getElementById("customer_name").value || "";
+    
+          if (selectedTableId) {
+            if (true){
+                // persist to server buffer
+                saveTableItem(selectedTableId, type, id, price, 1);
+            }else{
+                showAlert('error', 'Please select the waiter first, Thank You!');
+            }
+          } else {
+            if(true){
+              const name = card.querySelector('span').innerText;
+              // take-away or home-delivery mode: just in memory
+              addItemToOrder(type, id, name, price);
+            }else{
+              showAlert('error', 'Please fill the customer details first, Thank You!');
+            }
+          }
+        });
+
+      // 4) MenuItem or Deal click → add to order
+      {% comment %} document.getElementById('menu-items-grid')
+        .addEventListener('click', e => {
+          const itemCard = e.target.closest('.item-card');
+          if (itemCard) {
+            const id = parseInt(itemCard.dataset.itemId, 10);
+            const price = parseFloat(itemCard.dataset.price);
+            const name = itemCard.querySelector('span').innerText;
+            addItemToOrder('menu', id, name, price);
+            return;
+          }
+          const dealCard = e.target.closest('.deal-card');
+          if (dealCard) {
+            const id = parseInt(dealCard.dataset.dealId, 10);
+            const price = parseFloat(dealCard.dataset.price);
+            const name = dealCard.querySelector('span').innerText;
+            addItemToOrder('deal', id, name, price);
+          }
+        }); {% endcomment %}
+
+      // 5) Remove row or quantity change
+      document.getElementById('order-items-body')
+        .addEventListener('click', e => {
+
+              const btn = e.target.closest('.btn-remove-item');
+    if (!btn) return;
+
+    const tr = btn.closest('tr');
+    const st = tr.dataset.sourceType;
+    const sid = tr.dataset.sourceId;
+
+              if (selectedTableId) {
+              
+
+              fetch(`/tables/${selectedTableId}/items/`, {
+                method: 'DELETE',
+                headers: {
+                  'X-CSRFToken': csrftoken,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json'
+                },
+                body: JSON.stringify({ source_type: st, source_id: sid })
+              })
+              .then(resp => {
+                if (!resp.ok) {
+                  // pull down the error response so you can debug
+                  return resp.json().then(json => {
+                    console.error('DELETE /items/ error:', json);
+                    throw new Error(json.error || 'Delete failed');
+                  });
+                }
+                return resp.json();
+              })
+              .then(json => {
+                if (json.status === 'deleted') {
+                  loadTableItems(selectedTableId);
+                }
+              })
+              .catch(err => {
+                console.error(err);
+                alert('Could not remove item.');
+              });
+            }
+              if (e.target.closest('.btn-remove-item')) {
+            const idx = parseInt(
+              e.target.closest('tr').dataset.index, 10
+            );
+            removeItemFromOrder(idx);
+          }
+        });
+      document.getElementById('order-items-body')
+        .addEventListener('change', e => {
+          if (e.target.matches('.item-qty-input')) {
+            const tr = e.target.closest('tr');
+            const idx = parseInt(tr.dataset.index, 10);
+            const newQty = parseInt(e.target.value, 10) || 1;
+            selectedItems[idx].quantity = newQty;
+            tr.querySelector('.item-amount').innerText =
+              formatPrice(newQty * selectedItems[idx].unit_price);
+            recalcTotals();
+          }
+        });
+
+      // 6) Recalc totals when discount/tax/service fields change
+      ['discount','tax-perc','service-charge']
+        .forEach(id => {
+          document.getElementById(id)
+            .addEventListener('change', recalcTotals);
+        });
+
+      // 7) Search button: filter categories, items, or deals
+      document.getElementById('search-btn')
+        .addEventListener('click', () => {
+          const term = document.getElementById('search-term')
+            .value.trim().toLowerCase();
+
+          // Filter Categories
+          document.querySelectorAll('.category-card')
+            .forEach(card => {
+              if (card.id === 'deals-button') {
+                card.style.display = 'flex';
+                return;
+              }
+              const name = card.querySelector('span').innerText.toLowerCase();
+              card.style.display = (!term || name.includes(term))
+                ? 'flex'
+                : 'none';
+            });
+
+          // If “Deals” is currently selected, filter deals; otherwise filter menu items
+          if (document.getElementById('deals-button')
+            .classList.contains('selected')) {
+            showDeals(term);
+          } else {
+            const selCat = document.querySelector('.category-card.selected');
+            const catId = selCat ? parseInt(selCat.dataset.catId, 10) : null;
+            renderMenuItems(catId, term);
+          }
+        });
+
+      // 8) Reset button: clear everything
+      document.querySelector('.btn-reset')
+        .addEventListener('click', () => {
+          selectedItems = [];
+          renderOrderItemsTable();
+          document.getElementById('discount').value = 0;
+          document.getElementById('tax-perc').value = 0;
+          document.getElementById('service-charge').value = 0;
+
+          // after successful create/update & print:
+          fetch(`/tables/${selectedTableId}/items/clear/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': csrftoken }
+          }).then(() => loadTableItems(selectedTableId));
+
+          showAlert('success', 'Order reset');
+        });
+
+      // 9) New button: redirect to fresh create screen
+      document.querySelector('.btn-new')
+        .addEventListener('click', () => {
+          window.location.href = "{% url 'order_create' %}";
+        });
+
+      // 10) Create/Update button: AJAX‐post
+      document.querySelector('.btn-create')
+        .addEventListener('click', () => {
+          
+          const discount = parseFloat(
+            document.getElementById('discount').value
+          ) || 0;
+          const taxPerc = parseFloat(
+            document.getElementById('tax-perc').value
+          ) || 0;
+          const serviceCharge = parseFloat(
+            document.getElementById('service-charge').value
+          ) || 0;
+
+          const action = editingOrderId ? 'update' : 'create';
+          const payload = buildPayload(action);
+
+        const url = editingOrderId
+          ? `/orders/${editingOrderId}/update/`
+          : `{% url 'order_create' %}`;
+
+          fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': '{{ csrf_token }}'
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(resp => {
+    console.log("HTTP status:", resp.status);
+    return resp.text().then(text => {
+      console.log("Raw response text:", text);
+      try {
+        return JSON.parse(text);
+      } catch(e) {
+        throw new Error("Invalid JSON: " + e + "\nResponse was: " + text);
+      }
+    });
+  })
+  .then(data => {
+    if (data.error) {
+      Object.values(data.error).forEach(msg => showAlert('error', msg));
+    } else {
+      showAlert('success', 'Order saved!');
+      // …redirect…
+    }
+  })
+  .catch(err => {
+    console.error("Fetch/JSON error:", err);
+    showAlert('error', 'An unexpected error occurred: ' + err.message);
+  });
+        });
+
+      // 11) Paid button: create (if needed) and mark “paid” & print receipts
+      document.querySelector('.btn-paid').addEventListener('click', () => {
+          if (selectedItems.length === 0) {
+            showAlert('error', 'You must add at least one item before closing the order.');
+            return;
+          }
+
+        document.querySelector('.btn-paid').disabled  = true;
+        document.querySelector('.btn-paid').innerHtml = '<i class="fa fa-spinner fa-spin"></i> Submiting Order';
+
+        console.log("Button has been clicked.")
+        const discount = parseFloat(document.getElementById('discount').value) || 0;
+        const taxPerc  = parseFloat(document.getElementById('tax-perc').value) || 0;
+        const service  = parseFloat(document.getElementById('service-charge').value) || 0;
+ 
+        const url = getOrderSaveUrl();
+        const payload = buildPayload('paid');
+
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': '{{ csrf_token }}'
+      },
+      body: JSON.stringify(payload)
+    })
+    .then(resp => resp.json())
+    .then(data => {
+
+      if (data.error) {
+        // Show the error from server (e.g. “Print failed: …”)
+        showAlert('error', data.error);
+      } else {
+        if(selectedTableId){
+          // after successful create/update & print:
+          fetch(`/tables/${selectedTableId}/items/clear/`, {
+            method: 'DELETE',
+            headers: { 'X-CSRFToken': csrftoken }
+          }).then(() => loadTableItems(selectedTableId));
+        }
+
+          selectedItems = [];
+          document.getElementById('discount').value = 0;
+          document.getElementById('tax-perc').value = 0;
+          document.getElementById('service-charge').value = 0;
+          renderOrderItemsTable();
+
+        showAlert('success', 'Order saved & sent to printer!');
+
+      }
+    })
+    .catch(err => {
+      console.error("Fetch error:", err);
+      showAlert('error', 'An unexpected error occurred.');
+    })
+    .finally(() => {
+          document.querySelector('.btn-paid').disabled = false;
+          document.querySelector('.btn-paid').innerHTML = '<i class="fa fa-money-bill"></i> Close / Paid';
+          document.getElementById("mobile_no").value = "";
+          document.getElementById("customer_address").value = "";
+          document.getElementById("customer_name").value = "";
+          document.getElementById('waiter-select').selectedIndex = 0;
+    });
+  });
+
+    // NEW handler:
+  tableButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      takeAwayButton.classList.remove('active-class');
+      selectedTableId = btn.dataset.tableId || null;
+      refreshWatermark(selectedTableId);
+      loadTableItems(selectedTableId);
+      document.getElementById("customer-info-row").style.display = "none";
+      document.getElementById('waiter-or-rider').textContent = "Waiter";
+      document.getElementById('shipping-or-service').textContent = "Service Charges";
+      homeDelivery.checked = false;
+      fetch(`/tables/${selectedTableId}/session/`)
+      .then(r => r.json())
+      .then(sess => {
+        waiterSelect.value = sess.waiter_id || '';
+      })
+      .catch(err => {
+        console.error("Could not load table session:", err);
+        waiterSelect.value = '';
+      });
+
+      //const sess = fetch(`/tables/${selectedTableId}/session/`).then(r=>r.json());
+      //waiterSelect.value    = sess.waiter_id || '';
+
+
+      document.getElementById('table-heading').innerText =
+              selectedTableId
+                ? `Table ${btn.querySelector('span').innerText.split(' ')[1]}`
+                : 'Walk-in Customer';
+    });
+
+  });
+
+  // 2) When changing waiter or homeDelivery in UI, POST to session
+waiterSelect.addEventListener('change', ()=> {
+  fetch(`/tables/${selectedTableId}/session/`,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrftoken},
+    body: JSON.stringify({ waiter_id: waiterSelect.value, home_delivery: homeDelivery.checked })
+  });
+});
+
+const printTokenBtn = document.getElementById('print-token-btn');
+
+printTokenBtn.addEventListener('click', () => {
+  if (!selectedTableId) {
+    alert('Please select a table first');
+    return;
+  }
+  fetch(`/tables/${selectedTableId}/print-token/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': csrftoken }
+  })
+  .then(r => r.json())
+  .then(json => {
+    if (json.status === 'printed') {
+      {% comment %} alert(`Successfully printed ${json.count} new item tokens.`); {% endcomment %}
+    } else if (json.status === 'nothing_to_print') {
+      alert('No new items to print.');
+    }
+    // reload buffer so printed_quantity updates
+    loadTableItems(selectedTableId);
+  })
+  .catch(err => {
+    console.error(err);
+    alert('Error printing token. Check console.');
+  });
+});
+
+  function refreshWatermark(text) {
+  let label;
+  if (text == "yes") {
+    label = 'Home Delivery';
+    document.getElementById('table-heading').textContent = "Home Delivery";
+    document.getElementById("customer-info-row").style.display = "flex";
+    document.getElementById('waiter-select').selectedIndex = 0;
+    document.getElementById('waiter-or-rider').textContent = "Rider";
+    document.getElementById('shipping-or-service').textContent = "Delivery Charges";
+    takeAwayButton.classList.remove('active-class');
+  }
+  else if(text == "no"){
+    label = ""
+    document.getElementById('table-heading').textContent = "";
+    document.getElementById("customer-info-row").style.display = "none";
+    document.getElementById('waiter-select').selectedIndex = 0;
+    document.getElementById('waiter-or-rider').textContent = "Waiter";
+    document.getElementById('shipping-or-service').textContent = "Service Charges";
+  } else if (text == "takeaway") {
+    label = 'Take Away';
+  } else {
+    label = `Table ${text}`;
+  }
+  watermark.textContent = label;
+}
+  // ─ Include table_id in every save/paid payload ─
+  function buildPayload(action) {
+    const source = foodPandaCheckbox.checked ? "food_panda" : "walk_in";
+    const isHomeDelivery= homeDelivery.checked ? "yes" : "no";
+    
+    const mobileNo = document.getElementById("mobile_no").value || "";
+    const customerAddress = document.getElementById("customer_address").value || "";
+    const customerName = document.getElementById("customer_name").value || "";
+    
+    console.log("IS HOME DELIVERY: "+ isHomeDelivery);
+    console.log("IS Food Panda: "+ source);
+    
+    const base = {
+      discount: parseFloat(document.getElementById('discount').value)||0,
+      tax_percentage: parseFloat(document.getElementById('tax-perc').value)||0,
+      service_charge: parseFloat(document.getElementById('service-charge').value)||0,
+      items: selectedItems.map(it => ({
         type: it.type,
-        id: it.type === 'menu' ? it.menu_item_id : it.deal_id,
-        name: it.name,
+        menu_item_id: it.type==='menu' ? it.id : null,
+        deal_id:       it.type==='deal' ? it.id : null,
         quantity: it.quantity,
         unit_price: it.unit_price
-      }));
-    }
-    renderOrderItemsTable();
+      })),
+      action: action,
+    };
+    base.source = source;
+    base.table_id = selectedTableId;
+    base.waiter_id = waiterSelect.value || null;
+    base.isHomeDelivery = isHomeDelivery;
+    base.mobileNo = mobileNo;
+    base.customerAddress = customerAddress;
+    base.customerName = customerName
+    return base;
+  }
+    // NOW compute the URL for ANY save operation (create/update):
+function getOrderSaveUrl() {
+  // else truly brand-new
+  return `{% url 'order_create' %}`;
+}
 
-    // 2) By default, highlight the first category & show its items
-    const firstCat = document.querySelector(
-      '.category-card:not(#deals-button)'
-    );
-    if (firstCat) {
-      const firstCatId = parseInt(firstCat.dataset.catId, 10);
-      highlightCategory(firstCatId);
-    }
+document.getElementById('order-items-body')
+  .addEventListener('change', function(e) {
+    if (!e.target.matches('.item-qty-input')) return;
 
-    // 3) Category click → filter items or show deals
-    document.getElementById('categories-row')
-      .addEventListener('click', e => {
-        const card = e.target.closest('.category-card');
-        if (!card) return;
-        if (card.id === 'deals-button') {
-          showDeals(document.getElementById('search-term').value.trim());
-        } else {
-          const catId = parseInt(card.dataset.catId, 10);
-          highlightCategory(catId);
-        }
-      });
+    const input = e.target;
+    const newQty = parseInt(input.value, 10) || 1;
+    const tr = input.closest('tr');
 
-    // 4) MenuItem or Deal click → add to order
-    document.getElementById('menu-items-grid')
-      .addEventListener('click', e => {
-        const itemCard = e.target.closest('.item-card');
-        if (itemCard) {
-          const id = parseInt(itemCard.dataset.itemId, 10);
-          const price = parseFloat(itemCard.dataset.price);
-          const name = itemCard.querySelector('span').innerText;
-          addItemToOrder('menu', id, name, price);
-          return;
-        }
-        const dealCard = e.target.closest('.deal-card');
-        if (dealCard) {
-          const id = parseInt(dealCard.dataset.dealId, 10);
-          const price = parseFloat(dealCard.dataset.price);
-          const name = dealCard.querySelector('span').innerText;
-          addItemToOrder('deal', id, name, price);
-        }
-      });
+    // grab the TableMenuItem identifiers
+    const st  = tr.getAttribute('data-source-type');
+    const sid = tr.getAttribute('data-source-id');
 
-    // 5) Remove row or quantity change
-    document.getElementById('order-items-body')
-      .addEventListener('click', e => {
-        if (e.target.closest('.btn-remove-item')) {
-          const idx = parseInt(
-            e.target.closest('tr').dataset.index, 10
-          );
-          removeItemFromOrder(idx);
-        }
-      });
-    document.getElementById('order-items-body')
-      .addEventListener('change', e => {
-        if (e.target.matches('.item-qty-input')) {
-          const tr = e.target.closest('tr');
-          const idx = parseInt(tr.dataset.index, 10);
-          const newQty = parseInt(e.target.value, 10) || 1;
-          selectedItems[idx].quantity = newQty;
-          tr.querySelector('.item-amount').innerText =
-            formatPrice(newQty * selectedItems[idx].unit_price);
-          recalcTotals();
-        }
-      });
-
-    // 6) Recalc totals when discount/tax/service fields change
-    ['discount','tax-perc','service-charge']
-      .forEach(id => {
-        document.getElementById(id)
-          .addEventListener('change', recalcTotals);
-      });
-
-    // 7) Search button: filter categories, items, or deals
-    document.getElementById('search-btn')
-      .addEventListener('click', () => {
-        const term = document.getElementById('search-term')
-          .value.trim().toLowerCase();
-
-        // Filter Categories
-        document.querySelectorAll('.category-card')
-          .forEach(card => {
-            if (card.id === 'deals-button') {
-              card.style.display = 'flex'; 
-              return;
-            }
-            const name = card.querySelector('span').innerText.toLowerCase();
-            card.style.display = (!term || name.includes(term))
-              ? 'flex'
-              : 'none';
-          });
-
-        // If “Deals” is currently selected, filter deals; otherwise filter menu items
-        if (document.getElementById('deals-button')
-          .classList.contains('selected')) {
-          showDeals(term);
-        } else {
-          const selCat = document.querySelector('.category-card.selected');
-          const catId = selCat ? parseInt(selCat.dataset.catId, 10) : null;
-          renderMenuItems(catId, term);
-        }
-      });
-
-    // 8) Reset button: clear everything
-    document.querySelector('.btn-reset')
-      .addEventListener('click', () => {
-        selectedItems = [];
-        renderOrderItemsTable();
-        document.getElementById('discount').value = 0;
-        document.getElementById('tax-perc').value = 0;
-        document.getElementById('service-charge').value = 0;
-        showAlert('success', 'Order reset');
-      });
-
-    // 9) New button: redirect to fresh create screen
-    document.querySelector('.btn-new')
-      .addEventListener('click', () => {
-        window.location.href = "{% url 'order_create' %}";
-      });
-
-    // 10) Create/Update button: AJAX‐post
-    document.querySelector('.btn-create')
-      .addEventListener('click', () => {
-        const discount = parseFloat(
-          document.getElementById('discount').value
-        ) || 0;
-        const taxPerc = parseFloat(
-          document.getElementById('tax-perc').value
-        ) || 0;
-        const serviceCharge = parseFloat(
-          document.getElementById('service-charge').value
-        ) || 0;
-
-        const payload = {
-          discount: discount,
-          tax_percentage: taxPerc,
-          service_charge: serviceCharge,
-          items: selectedItems.map(it => ({
-            type: it.type,
-            menu_item_id: it.type === 'menu' ? it.id : null,
-            deal_id: it.type === 'deal' ? it.id : null,
-            quantity: it.quantity,
-            unit_price: it.unit_price
-          })),
-          action: editingOrderId ? 'update' : 'create'
-        };
-
-        {% if order %}
-          const url = editingOrderId
-            ? "{% url 'order_update' order.id %}"
-            : "{% url 'order_create' %}";
-        {% else %}
-          const url = "{% url 'order_create' %}";
-        {% endif %}
-
-        fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': '{{ csrf_token }}'
-          },
-          body: JSON.stringify(payload)
+    if (selectedTableId) {
+      // ==== TABLE SESSION branch ====
+      fetch(`/tables/${selectedTableId}/items/`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': csrftoken
+        },
+        body: JSON.stringify({
+          source_type: st,
+          source_id:   sid,
+          quantity:    newQty
         })
-        .then(resp => resp.json())
-        .then(data => {
-          if (data.error) {
-            Object.values(data.error)
-              .forEach(msg => showAlert('error', msg));
-          } else {
-            showAlert('success', 'Order saved!');
-            const newId = editingOrderId || data.order_id;
-            setTimeout(() => {
-              window.location.href =
-                "{% url 'order_detail' 0 %}".replace('/0/', '/' + newId + '/');
-            }, 800);
-          }
-        })
-        .catch(() => {
-          showAlert('error', 'An unexpected error occurred.');
-        });
+      })
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === 'updated') {
+          // reload from server so printed_quantity etc stays in sync
+          loadTableItems(selectedTableId);
+        } else {
+          alert(`Error updating quantity: ${json.error||'unknown'}`);
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        alert('Network error while updating quantity.');
       });
+    } else {
+      // ==== ORDER‐EDIT branch (your existing logic) ====
+      const idx = parseInt(tr.dataset.index, 10);
+      const oldQty = selectedItems[idx].quantity;
+      selectedItems[idx].quantity = newQty;
 
-    // 11) Paid button: create (if needed) and mark “paid” & print receipts
-    document.querySelector('.btn-paid')
-      .addEventListener('click', () => {
-        // Gather discount, tax, serviceCharge
-        const discount = parseFloat(
-          document.getElementById('discount').value
-        ) || 0;
-        const taxPerc = parseFloat(
-          document.getElementById('tax-perc').value
-        ) || 0;
-        const serviceCharge = parseFloat(
-          document.getElementById('service-charge').value
-        ) || 0;
+      if (newQty > oldQty) {
+        selectedItems[idx].added_at = new Date().toISOString(); // bump timestamp on increase
+      }
 
-        // Build payload with action:'paid'
-        const payload = {
-          discount: discount,
-          tax_percentage: taxPerc,
-          service_charge: serviceCharge,
-          items: selectedItems.map(it => ({
-            type: it.type,
-            menu_item_id: it.type === 'menu' ? it.id : null,
-            deal_id: it.type === 'deal' ? it.id : null,
-            quantity: it.quantity,
-            unit_price: it.unit_price
-          })),
-          action: 'paid'
-        };
+      tr.querySelector('.item-amount').innerText =
+        formatPrice(newQty * selectedItems[idx].unit_price);
 
-        {% if order %}
-          // Editing existing order → POST → update status="paid" → print
-          const url = "{% url 'order_update' order.id %}";
+      const addedTd = tr.querySelector('.item-added');
+      addedTd.setAttribute('data-added', selectedItems[idx].added_at || '');
+      addedTd.textContent = formatAddedCell(selectedItems[idx].added_at);
 
-          fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': '{{ csrf_token }}'
-            },
-            body: JSON.stringify(payload)
-          })
-          .then(resp => resp.json())
-          .then(data => {
-            if (data.error) {
-              Object.values(data.error)
-                .forEach(msg => showAlert('error', msg));
-            } else {
-              // Open two print windows: token & bill (existing order.id)
-              const tokenUrl = "{% url 'order_print_token' order.id %}";
-              const billUrl  = "{% url 'order_print_bill' order.id %}";
-              window.open(tokenUrl, '_blank').print();
-              window.open(billUrl, '_blank').print();
-              showAlert('success', 'Payment complete & receipts printing');
-              setTimeout(() => window.location.href = "{% url 'order_list' %}", 1500);
-            }
-          })
-          .catch(() => {
-            showAlert('error', 'An unexpected error occurred.');
-          });
-        {% else %}
-          // Brand-new order → POST to order_create with action='paid'
-          const url = "{% url 'order_create' %}";
 
-          fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-CSRFToken': '{{ csrf_token }}'
-            },
-            body: JSON.stringify(payload)
-          })
-          .then(resp => resp.json())
-          .then(data => {
-            if (data.error) {
-              Object.values(data.error)
-                .forEach(msg => showAlert('error', msg));
-            } else {
-              const newId = data.order_id; // newly created order’s PK
-              // Immediately open Print Token & Print Bill for this newId:
-              const tokenUrl = "{% url 'order_print_token' 0 %}".replace('/0/', '/' + newId + '/');
-              const billUrl  = "{% url 'order_print_bill'  0 %}".replace('/0/', '/' + newId + '/');
-              window.open(tokenUrl, '_blank').print();
-              window.open(billUrl,  '_blank').print();
-              showAlert('success', 'Order created as paid & printing receipts');
-              setTimeout(() => window.location.href = "{% url 'order_list' %}", 1500);
-            }
-          })
-          .catch(() => {
-            showAlert('error', 'An unexpected error occurred.');
-          });
-        {% endif %}
-      });
+      recalcTotals();
+    }
   });
+
+
+document.getElementById('btn-switch-table').addEventListener('click', () => {
+  if (!selectedTableId) {
+    return alert('Please select a table first.');
+  }
+
+  // find all table buttons that are NOT active and not the current one
+  const available = Array.from(document.querySelectorAll('.table-btn'))
+    .map(btn => parseInt(btn.dataset.tableId, 10))
+    .filter(id =>
+      id !== selectedTableId &&
+      !document.querySelector(`.table-btn[data-table-id="${id}"]`).classList.contains('active')
+    );
+
+  if (available.length === 0) {
+    return alert('No other tables available to switch to.');
+  }
+
+  const choice = parseInt(
+    prompt(`Available tables: ${available.join(', ')}\nEnter table number:`),
+    10
+  );
+  if (!available.includes(choice)) {
+    return alert('Invalid table number.');
+  }
+
+  const oldTableId = selectedTableId;
+
+  fetch('/tables/switch/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': csrftoken,
+    },
+    body: JSON.stringify({
+      from_table: oldTableId,
+      to_table:   choice,
+    }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) throw new Error(data.error);
+
+      // 1) Clear old table button UI
+      const oldBtn = document.querySelector(`.table-btn[data-table-id="${oldTableId}"]`);
+      if (oldBtn) {
+        oldBtn.classList.remove('active');
+        const oldBadge = oldBtn.querySelector('.status');
+        if (oldBadge) oldBadge.remove();
+      }
+
+      // 2) If currently displayed as your “selectedTable”, clear the items list
+      if (oldTableId === parseInt(document.getElementById('table-heading').dataset.current)) {
+        document.getElementById('order-items-body').innerHTML = '';
+      }
+
+      // 3) Switch to the new table in state & UI
+      selectedTableId = data.new_table;
+      document.getElementById('table-heading').textContent = `Table ${choice}`;
+      document.getElementById('order-watermark').textContent = `Table ${choice}`;
+      document.getElementById('table-heading').dataset.current = choice;
+
+      // 4) Load its items (and its badge will be re‐rendered in recalcTotals)
+      loadTableItems(selectedTableId);
+      showAlert('success', `Switched to Table ${choice}`);
+    })
+    .catch(err => {
+      console.error(err);
+      alert(`Could not switch tables: ${err.message}`);
+    });
+});
+
+    });
+
+
 </script>
+
+
+
 {% endblock %}

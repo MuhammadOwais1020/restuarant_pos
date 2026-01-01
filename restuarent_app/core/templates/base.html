@@ -343,7 +343,7 @@
       <a href="{% url 'category_list' %}" class="{% if request.resolver_match.url_name == 'category_list' %}active{% endif %}"> <i class="fa fa-folder"></i> Categories </a>
       <a href="{% url 'menuitem_list' %}" class="{% if request.resolver_match.url_name == 'menuitem_list' %}active{% endif %}"> <i class="fa fa-tags"></i> Menu Items </a>
       <a href="{% url 'deal_list' %}" class="{% if request.resolver_match.url_name == 'deal_list' %}active{% endif %}"> <i class="fa fa-tag"></i> Deals </a>
-      <a href="{% url 'order_list' %}" class="{% if request.resolver_match.url_name == 'order_create' %}active{% endif %}"> <i class="fa fa-receipt"></i> New Order </a>
+      <a href="{% url 'order_create' %}" class="{% if request.resolver_match.url_name == 'order_create' %}active{% endif %}"> <i class="fa fa-receipt"></i> New Order </a>
       <a href="{% url 'order_list' %}" class="{% if request.resolver_match.url_name == 'order_list' %}active{% endif %}"> <i class="fa fa-receipt"></i> Order List </a>
       <a href="/tables/" class="{% if request.resolver_match.url_name == 'table_list' %}active{% endif %}"> <i class="fa fa-table"></i> Tables </a>
       <a href="/reports/" class="{% if request.resolver_match.url_name == 'reports' %}active{% endif %}"> <i class="fa fa-chart-line"></i> Reports </a>

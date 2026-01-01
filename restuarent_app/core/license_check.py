@@ -103,6 +103,6 @@ def enforce_authorization(request):
     if not is_mac_allowed():
         print("mac rise")
         raise RuntimeError("MAC address not authorized.")
-    if not is_not_expired():
-        print("expiry rise")
-        raise RuntimeError("Software license has expired.")
+    # if not is_not_expired():
+    #     print("expiry rise")
+    #     raise RuntimeError("Software license has expired.")

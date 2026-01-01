@@ -250,13 +250,15 @@ from .ledger import (
     LedgerHomeView,
     SupplierLedgerView,
     StaffLedgerView,
-    RawMaterialLedgerView
+    RawMaterialLedgerView,
+    CustomerLedgerView
 )
 
 urlpatterns += [
     path('ledger/', LedgerHomeView.as_view(), name='ledger_home'),
     path('ledger/supplier/<int:pk>/', SupplierLedgerView.as_view(), name='ledger_supplier'),
     path('ledger/staff/<int:pk>/', StaffLedgerView.as_view(), name='ledger_staff'),
+    path('ledger/customer/<int:pk>/', CustomerLedgerView.as_view(), name='ledger_customer'),
 ]
 
 from core.kitchen import (
@@ -299,4 +301,35 @@ urlpatterns += [
     path('settings/station/add/', PrintStationCreateView.as_view(), name='station_create'),
     path('settings/station/<int:pk>/edit/', PrintStationUpdateView.as_view(), name='station_edit'),
     path('settings/station/<int:pk>/delete/', PrintStationDeleteView.as_view(), name='station_delete'),
+]
+
+from .views import (
+    CustomerListView, CustomerCreateView, 
+    CustomerUpdateView, CustomerDeleteView
+)
+
+urlpatterns += [
+    # Customers CRUD
+    path('customers/', CustomerListView.as_view(), name='customer_list'),
+    path('customers/create/', CustomerCreateView.as_view(), name='customer_create'),
+    path('customers/<int:pk>/edit/', CustomerUpdateView.as_view(), name='customer_edit'),
+    path('customers/<int:pk>/delete/', CustomerDeleteView.as_view(), name='customer_delete'),
+]
+
+from .views import (
+    PaymentReceivedListView, PaymentReceivedCreateView, 
+    PaymentReceivedUpdateView, PaymentReceivedDeleteView
+)
+
+urlpatterns += [
+    path('payments-in/', PaymentReceivedListView.as_view(), name='payment_received_list'),
+    path('payments-in/new/', PaymentReceivedCreateView.as_view(), name='payment_received_create'),
+    path('payments-in/<int:pk>/edit/', PaymentReceivedUpdateView.as_view(), name='payment_received_edit'),
+    path('payments-in/<int:pk>/delete/', PaymentReceivedDeleteView.as_view(), name='payment_received_delete'),
+]
+
+from .views import MarketListView
+
+urlpatterns += [
+    path('kitchen/market-list/', MarketListView.as_view(), name='market_list_print'),
 ]

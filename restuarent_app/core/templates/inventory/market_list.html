@@ -1,0 +1,227 @@
+{% extends 'base.html' %}
+{% block title %}Print Market List{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2><i class="fa fa-print"></i> Print Market Shopping List</h2>
+        <a href="{% url 'dashboard' %}" class="btn btn-secondary">Back</a>
+    </div>
+
+    <div class="row">
+        <div class="col-md-5">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Add Items</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3 position-relative">
+                        <label class="form-label">Search Raw Material</label>
+                        <input type="text" id="item-search" class="form-control" placeholder="Type to search..." autocomplete="off">
+                        
+                        <div id="search-results" class="list-group position-absolute w-100" style="z-index:1000; display:none; max-height:200px; overflow-y:auto; border:1px solid #ccc;"></div>
+                    </div>
+                    
+                    <div class="row g-2">
+                        <div class="col-8">
+                            <label class="form-label">Selected Item</label>
+                            <input type="text" id="selected-name" class="form-control" readonly placeholder="Select from search">
+                            <input type="hidden" id="selected-unit">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" id="selected-qty" class="form-control" value="1" min="0.1" step="any">
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-success w-100 mt-3" id="btn-add">
+                        <i class="fa fa-plus"></i> Add to List
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-7">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white d-flex justify-content-between">
+                    <h5 class="mb-0">List Preview</h5>
+                    <button class="btn btn-sm btn-danger" id="btn-clear">Clear All</button>
+                </div>
+                <div class="card-body p-0" style="height: 400px; overflow-y: auto;">
+                    <table class="table table-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Item Name</th>
+                                <th>Quantity</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="list-body">
+                            </tbody>
+                    </table>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-primary w-100 py-2" id="btn-print">
+                        <i class="fa fa-print fa-lg"></i> PRINT SLIP
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script id="raw-materials-data" type="application/json">
+    {{ raw_materials_json|safe }}
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const allMaterials = JSON.parse(document.getElementById('raw-materials-data').textContent);
+    
+    // Elements
+    const searchInput = document.getElementById('item-search');
+    const resultsDiv = document.getElementById('search-results');
+    const nameInput = document.getElementById('selected-name');
+    const unitInput = document.getElementById('selected-unit');
+    const qtyInput = document.getElementById('selected-qty');
+    const listBody = document.getElementById('list-body');
+    
+    // State
+    let shoppingList = [];
+
+    // 1. Search Logic
+    searchInput.addEventListener('input', function() {
+        const term = this.value.toLowerCase().trim();
+        resultsDiv.innerHTML = '';
+        if (term.length < 1) { resultsDiv.style.display = 'none'; return; }
+
+        const filtered = allMaterials.filter(m => m.name.toLowerCase().includes(term));
+        
+        if(filtered.length > 0){
+            resultsDiv.style.display = 'block';
+            filtered.forEach(m => {
+                const item = document.createElement('a');
+                item.className = 'list-group-item list-group-item-action';
+                item.href = '#';
+                item.innerHTML = `<strong>${m.name}</strong> <small class="text-muted">(${m.unit})</small>`;
+                item.onclick = (e) => {
+                    e.preventDefault();
+                    selectItem(m);
+                };
+                resultsDiv.appendChild(item);
+            });
+        } else {
+            resultsDiv.style.display = 'none';
+        }
+    });
+
+    function selectItem(m) {
+        nameInput.value = m.name;
+        unitInput.value = m.unit;
+        resultsDiv.style.display = 'none';
+        searchInput.value = '';
+        qtyInput.focus();
+    }
+    
+    // Hide search on outside click
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+            resultsDiv.style.display = 'none';
+        }
+    });
+
+    // 2. Add to List
+    document.getElementById('btn-add').addEventListener('click', () => {
+        const name = nameInput.value;
+        const unit = unitInput.value;
+        const qty = parseFloat(qtyInput.value);
+
+        if(!name) { alert("Select an item first"); return; }
+        if(!qty || qty <= 0) { alert("Enter valid quantity"); return; }
+
+        // Check if exists, just update qty
+        const existing = shoppingList.find(x => x.name === name);
+        if(existing) {
+            existing.qty += qty;
+        } else {
+            shoppingList.push({ name: name, unit: unit, qty: qty });
+        }
+        
+        // Reset inputs
+        nameInput.value = '';
+        unitInput.value = '';
+        qtyInput.value = '1';
+        searchInput.focus();
+        
+        renderTable();
+    });
+
+    // 3. Render Table
+    function renderTable() {
+        listBody.innerHTML = '';
+        if(shoppingList.length === 0) {
+            listBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">List is empty</td></tr>';
+            return;
+        }
+
+        shoppingList.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.name}</td>
+                <td>${item.qty} ${item.unit}</td>
+                <td><button class="btn btn-sm btn-outline-danger" onclick="removeItem(${index})"><i class="fa fa-times"></i></button></td>
+            `;
+            listBody.appendChild(tr);
+        });
+    }
+
+    // Expose remove function to window
+    window.removeItem = function(index) {
+        shoppingList.splice(index, 1);
+        renderTable();
+    };
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+        shoppingList = [];
+        renderTable();
+    });
+
+    // 4. Print Action
+    document.getElementById('btn-print').addEventListener('click', () => {
+        if(shoppingList.length === 0) { alert("List is empty!"); return; }
+
+        // Disable button
+        const btn = document.getElementById('btn-print');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Printing...';
+
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({ items: shoppingList })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === 'success') {
+                //alert("Sent to printer!");
+                shoppingList = []; // Clear list after print
+                renderTable();
+            } else {
+                alert("Print Failed: " + data.message);
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert("Network Error");
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa fa-print fa-lg"></i> PRINT SLIP';
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -23,12 +23,89 @@ from .models import (
     MenuItem, Deal
 )
 
+from django.urls import reverse_lazy
 from django.db.models import Max
 from django.utils import timezone
 from .models import next_token_for
 
 from .utils import get_next_token_number
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView
+from django.http import JsonResponse 
+from .models import Customer
 
+# Mixin to return JSON for AJAX forms
+class AjaxableResponseMixin:
+    def is_ajax(self):
+        return self.request.headers.get('x-requested-with') == 'XMLHttpRequest'
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        if self.is_ajax():
+            return JsonResponse({'message': 'OK'})
+        return response
+
+    def form_invalid(self, form):
+        if self.is_ajax():
+            return JsonResponse(form.errors, status=400)
+        return super().form_invalid(form)
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if self.is_ajax():
+            return JsonResponse({'message': 'Deleted'})
+        return super().delete(request, *args, **kwargs)
+    
+# ---------- CUSTOMERS CRUD ----------
+
+class CustomerListView(LoginRequiredMixin, ListView):
+    model = Customer
+    template_name = 'customers/customer_list.html'
+    context_object_name = 'customers'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().order_by('-created_at')
+        q = self.request.GET.get('q')
+        if q:
+            # Search by Name or Phone
+            qs = qs.filter(name__icontains=q) | qs.filter(phone__icontains=q)
+        return qs
+
+class CustomerCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
+    model = Customer
+    fields = ['name', 'phone', 'address', 'current_balance']
+    template_name = 'customers/customer_form.html'
+    success_url = reverse_lazy('customer_list')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = "Add New Customer"
+        return ctx
+
+class CustomerUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
+    model = Customer
+    fields = ['name', 'phone', 'address', 'current_balance']
+    template_name = 'customers/customer_form.html'
+    success_url = reverse_lazy('customer_list')
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['title'] = f"Edit {self.object.name}"
+        return ctx
+
+class CustomerDeleteView(LoginRequiredMixin, DeleteView):
+    model = Customer
+    success_url = reverse_lazy('customer_list')
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'message': 'Deleted'})
+        return super().delete(request, *args, **kwargs)
+    
+    
 class LoginView(View):
     def get(self, request):
         return render(request, 'login.html')
@@ -146,7 +223,7 @@ class MenuItemListView(LoginRequiredMixin, ListView):
 
 class MenuItemCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image', 'station']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image', 'station', 'weight', 'unit']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -157,7 +234,7 @@ class MenuItemDetailView(LoginRequiredMixin, DetailView):
 
 class MenuItemUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
     model = MenuItem
-    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image', 'station']
+    fields = ['category', 'name', 'description', 'price', 'food_panda_price', 'rank', 'is_available', 'image', 'station', 'weight', 'unit']
     template_name = 'menu_items/menuitem_form.html'
     success_url = reverse_lazy('menuitem_list')
 
@@ -288,7 +365,7 @@ from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import ListView
-from .models import Order, Payment
+from .models import Order, Payment, Customer
 
 class OrderListView(LoginRequiredMixin, ListView):
     model = Order
@@ -496,6 +573,20 @@ class OrderCreateView(LoginRequiredMixin, View):
                 t.current_order_total = "0.00"
                 t.has_items = False
 
+        # === 6. FETCH CUSTOMERS (NEW) ===
+        # Fetch ID, Name, Phone, Balance
+        customers_qs = Customer.objects.all().values('id', 'name', 'phone', 'current_balance')
+        customers_list = [
+            {
+                'id': c['id'],
+                'name': c['name'],
+                'phone': c['phone'],
+                'balance': float(c['current_balance'] or 0)
+            }
+            for c in customers_qs
+        ]
+        all_customers_json = json.dumps(customers_list)
+
         return render(request, "orders/order_form.html", {
             "categories": categories,
             "all_menu_items_json": all_menu_items_json,
@@ -504,6 +595,7 @@ class OrderCreateView(LoginRequiredMixin, View):
             "order": None,
             "tables": tables,
             "waiters_json": waiters_json,
+            "all_customers_json": all_customers_json,
         })
     
     def post(self, request):
@@ -529,6 +621,21 @@ class OrderCreateView(LoginRequiredMixin, View):
         customer_address = data.get("customerAddress") or None
         customer_name = data.get("customerName") or None
 
+        # --- NEW: Extract Credit/Payment Fields ---
+        payment_method = data.get("payment_method", "cash")
+        customer_id = data.get("customer_id") or None
+        received_amount = Decimal(str(data.get("received_amount", 0) or 0))
+
+        # --- VALIDATION: Credit requires Customer ---
+        customer_obj = None
+        if payment_method == 'credit':
+            if not customer_id:
+                return JsonResponse({"error": "Registered Customer is required for Credit orders."}, status=400)
+            try:
+                customer_obj = Customer.objects.get(id=customer_id)
+            except Customer.DoesNotExist:
+                return JsonResponse({"error": "Invalid Customer ID."}, status=400)
+        
         # Resolve Waiter
         waiter = None
         if waiter_id:
@@ -539,15 +646,12 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         my_datetime = timezone.localtime(timezone.now())
         
-        # --- FIXED LOGIC START ---
         # Default status based on action
         status_value = "paid" if action == "paid" else "pending"
         
         # Only force 'pending' for Tables/Delivery IF the user did NOT click Paid.
-        # This allows you to close/pay a table order immediately.
-        # if (table_id or is_home_delivery == "yes") and action != "paid":
-        #     status_value = "pending"
-        # --- FIXED LOGIC END ---
+        if (table_id or is_home_delivery == "yes") and action != "paid":
+            status_value = "pending"
 
         session = None
         order = None
@@ -579,6 +683,7 @@ class OrderCreateView(LoginRequiredMixin, View):
                     customer_address=customer_address,
                     created_at=my_datetime,
                     token_number=session_token,
+                    customer=customer_obj, # Link Customer
                 )
 
                 # Reset Session
@@ -611,6 +716,7 @@ class OrderCreateView(LoginRequiredMixin, View):
                 customer_address=customer_address,
                 created_at=my_datetime,
                 token_number=token_number,
+                customer=customer_obj, # Link Customer
             )
 
         # === 2. ITEMS BULK CREATION ===
@@ -643,22 +749,49 @@ class OrderCreateView(LoginRequiredMixin, View):
         if order_items_to_create:
             OrderItem.objects.bulk_create(order_items_to_create)
 
-        # === 3. AUTO-PAYMENT ===
-        # If Walk-in and NOT Home Delivery, create payment immediately if not table
-        # (Or if it's Table/Delivery but status is PAID, we record payment)
-        if status_value == 'paid': 
-             Payment.objects.create(
-                order=order,
-                amount=total_price,
-                method="cash", # You might want to pass this from frontend too
-                details=""
-            )
+        # === 3. PAYMENT LOGIC (UPDATED FOR CREDIT) ===
+        
+        # Calculate Grand Total for accurate Credit/Ledger math
+        # Formula: (Subtotal - Discount) + Tax + Service
+        after_discount = total_price - discount
+        if after_discount < 0: after_discount = Decimal('0')
+        tax_amount = (after_discount * tax_percentage) / Decimal('100')
+        grand_total = after_discount + tax_amount + service_charge
+
+        if status_value == 'paid':
+            if payment_method == 'credit' and customer_obj:
+                # --- A. Credit Logic ---
+                # 1. Calculate how much goes to Udhaar
+                udhaar_amount = grand_total - received_amount
+                
+                # 2. Update Customer Balance (Increase receivable)
+                customer_obj.current_balance += udhaar_amount
+                customer_obj.save()
+
+                # 3. If they paid anything partially, record that payment
+                if received_amount > 0:
+                    Payment.objects.create(
+                        order=order,
+                        amount=received_amount,
+                        method="cash", # Partial payment is usually cash
+                        details=f"Partial payment for Credit Order. Remaining: {udhaar_amount}"
+                    )
+                # Note: If received_amount is 0, no Payment record is created (pure credit).
+                
+            else:
+                # --- B. Standard Payment (Cash/Card/etc) ---
+                # Only create payment if not table/delivery pending (already checked by status_value='paid')
+                Payment.objects.create(
+                    order=order,
+                    amount=grand_total, # Use grand_total to be accurate
+                    method=payment_method,
+                    details=""
+                )
 
         # === 4. PRINTING LOGIC ===
         if status_value == "paid" or status_value == "pending":
             try:
                 ps = PrintStatus.objects.first()
-                # Default to True if no record exists, just to be safe for debugging
                 bill_enabled  = ps.bill  if ps else True 
                 token_enabled = ps.token if ps else True
 
@@ -698,14 +831,13 @@ class OrderCreateView(LoginRequiredMixin, View):
 
                 # --- BILL ---
                 if bill_enabled:
-                    # Explicitly use your printer
                     bill_printer = "POS80 Printer"
                     
-                    bill_data_cust = build_bill_bytes(order, is_food_panda, "")
+                    bill_data_cust = build_bill_bytes(order, is_food_panda, "Customer Copy")
                     send_to_printer(bill_data_cust, printer_name=bill_printer)
                     
-                    # bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
-                    # send_to_printer(bill_data_office, printer_name=bill_printer)
+                    bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
+                    send_to_printer(bill_data_office, printer_name=bill_printer)
 
             except Exception as e:
                 print(f"Printing Error: {e}")
@@ -717,7 +849,6 @@ class OrderCreateView(LoginRequiredMixin, View):
 
         return JsonResponse({"message": "Order Created", "order_id": order.id})
     
-
 import json
 from django.shortcuts      import render, get_object_or_404
 from django.http           import JsonResponse, HttpResponseBadRequest
@@ -739,7 +870,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         order = get_object_or_404(Order, pk=pk)
-        # … your existing GET logic unchanged …
+        
         categories = Category.objects.prefetch_related('items').order_by('name')
         all_waiters = Waiter.objects.order_by('name').values('id','name')
         waiters_json = json.dumps(list(all_waiters))
@@ -806,6 +937,19 @@ class OrderUpdateView(LoginRequiredMixin, View):
             t.current_order_total = f"{total:.2f}"
             t.has_items           = (total > 0)
 
+        # === FETCH CUSTOMERS (NEW) ===
+        customers_qs = Customer.objects.all().values('id', 'name', 'phone', 'current_balance')
+        customers_list = [
+            {
+                'id': c['id'],
+                'name': c['name'],
+                'phone': c['phone'],
+                'balance': float(c['current_balance'] or 0)
+            }
+            for c in customers_qs
+        ]
+        all_customers_json = json.dumps(customers_list)
+
         return render(request, "orders/order_form.html", {
             "categories":          categories,
             "all_menu_items_json": all_menu_items_json,
@@ -814,6 +958,7 @@ class OrderUpdateView(LoginRequiredMixin, View):
             "order":               order,
             "tables":              tables,
             "waiters_json": waiters_json,
+            "all_customers_json": all_customers_json,
         })
 
 
@@ -827,14 +972,34 @@ class OrderUpdateView(LoginRequiredMixin, View):
         # 1) Update order fields
         waiter_id = data.get("waiter_id") or None
         is_home_delivery = data.get("isHomeDelivery") or None
-        order.discount       = data.get("discount", 0) or 0
-        order.tax_percentage = data.get("tax_percentage", 0) or 0
-        order.service_charge = data.get("service_charge", 0) or 0
-        order.table_id     = data.get("table_id")
+        order.discount       = Decimal(str(data.get("discount", 0) or 0))
+        order.tax_percentage = Decimal(str(data.get("tax_percentage", 0) or 0))
+        order.service_charge = Decimal(str(data.get("service_charge", 0) or 0))
+        order.table_id       = data.get("table_id")
         action               = data.get("action", "update")
+        
+        # Logic: If action is paid, mark paid. 
         order.status         = "paid" if action == "paid" else "pending"
+        
         order.waiter_id = waiter_id
         order.isHomeDelivery = is_home_delivery
+        
+        # --- NEW: Extract Credit Fields ---
+        payment_method = data.get("payment_method", "cash")
+        customer_id = data.get("customer_id") or None
+        received_amount = Decimal(str(data.get("received_amount", 0) or 0))
+
+        # --- VALIDATION: Credit requires Customer ---
+        customer_obj = None
+        if payment_method == 'credit':
+            if not customer_id:
+                return JsonResponse({"error": "Registered Customer is required for Credit orders."}, status=400)
+            try:
+                customer_obj = Customer.objects.get(id=customer_id)
+                order.customer = customer_obj # Link to order
+            except Customer.DoesNotExist:
+                return JsonResponse({"error": "Invalid Customer ID."}, status=400)
+        
         order.save()
 
         # 2) Table occupancy
@@ -842,17 +1007,11 @@ class OrderUpdateView(LoginRequiredMixin, View):
             tbl = Table.objects.get(pk=order.table_id)
             tbl.is_occupied = (order.status != "paid")
             tbl.save()
-            print(f"1. Update Order Table {order.table_id}: occupied {tbl.is_occupied} for Order # {order.pk}")
 
-        # 3) Diff algorithm for OrderItems
+        # 3) Diff algorithm for OrderItems (unchanged logic)
         incoming = data.get("items", [])
-        # build map of existing items by (menu_id, deal_id)
-        existing_map = {
-            (oi.menu_item_id, oi.deal_id): oi
-            for oi in order.items.all()
-        }
+        existing_map = {(oi.menu_item_id, oi.deal_id): oi for oi in order.items.all()}
 
-        # process incoming items
         for it in incoming:
             if it.get("type") == "menu":
                 key = (it["menu_item_id"], None)
@@ -862,55 +1021,90 @@ class OrderUpdateView(LoginRequiredMixin, View):
                 m_id, d_id = None, it["deal_id"]
 
             if key in existing_map:
-                # update existing
                 oi = existing_map.pop(key)
-                oi.quantity   = it["quantity"]
-                oi.unit_price = it["unit_price"]
-                oi.save()   # preserves token_printed
+                oi.quantity    = it["quantity"]
+                oi.unit_price = Decimal(str(it["unit_price"]))
+                oi.save() 
             else:
-                # create brand‑new → token_printed defaults to False
                 OrderItem.objects.create(
-                    order=order,
-                    menu_item_id=m_id,
-                    deal_id=d_id,
-                    quantity=it["quantity"],
-                    unit_price=it["unit_price"]
+                    order=order, menu_item_id=m_id, deal_id=d_id,
+                    quantity=it["quantity"], unit_price=Decimal(str(it["unit_price"]))
                 )
 
-        # anything still in existing_map was removed by user → delete
         for oi in existing_map.values():
             oi.delete()
 
-        # 4) If marking paid, print receipts
+        # 4) If marking paid, Handle Payment & Printing
         if order.status == "paid":
+            
+            # --- Recalculate Totals (Items might have changed) ---
+            from decimal import Decimal
+            subtotal = sum(item.quantity * item.unit_price for item in order.items.all())
+            after_disc = subtotal - order.discount
+            if after_disc < 0: after_disc = Decimal('0')
+            tax_amt = (after_disc * order.tax_percentage) / Decimal('100')
+            grand_total = after_disc + tax_amt + order.service_charge
+
+            # --- Handle Credit / Payment Logic ---
+            if payment_method == 'credit' and customer_obj:
+                # 1. Calculate Udhaar
+                udhaar_amount = grand_total - received_amount
+                
+                # 2. Update Customer Balance
+                customer_obj.current_balance += udhaar_amount
+                customer_obj.save()
+
+                # 3. Record Partial Payment (if any)
+                if received_amount > 0:
+                    Payment.objects.create(
+                        order=order,
+                        amount=received_amount,
+                        method="cash", 
+                        details=f"Partial payment for Credit Order. Remaining: {udhaar_amount}"
+                    )
+            else:
+                # Standard Payment
+                # Check if payment already exists (since this is update view), if not create
+                if not hasattr(order, 'payment'):
+                    Payment.objects.create(
+                        order=order,
+                        amount=grand_total,
+                        method=payment_method,
+                        details=""
+                    )
+                else:
+                    # Optional: Update existing payment if user changed method/amount
+                    # For now, we assume simple closure.
+                    pass
+
+            # --- Printing ---
             try:
-                ps           = PrintStatus.objects.first()
-                token_on     = ps.token if ps else False
-                bill_on      = ps.bill  if ps else False
+                ps             = PrintStatus.objects.first()
+                token_on       = ps.token if ps else False
+                bill_on        = ps.bill  if ps else True 
+                
+                printer_name = "POS80 Printer"
 
                 if token_on:
                     token_data = build_token_bytes(order)
-                    send_to_printer(token_data)
+                    send_to_printer(token_data, printer_name=printer_name)
+                
                 if bill_on:
                     bill_data  = build_bill_bytes(order)
-                    send_to_printer(bill_data)
+                    send_to_printer(bill_data, printer_name=printer_name)
 
                 # free the table
                 if order.table_id is not None:
                     tbl = Table.objects.get(pk=order.table_id)
                     tbl.is_occupied = False
                     tbl.save()
-                    print(f"2. Update Order Table {order.table_id}: occupied {tbl.is_occupied} for Order # {order.pk}")
-
 
             except Exception as e:
                 return JsonResponse({"error": f"Print failed: {e}"}, status=500)
 
         return JsonResponse({"message": "Order Updated", "order_id": order.id})
+    
 
-
-
-# core/views.py
 # core/views.py
 
 from decimal import Decimal
@@ -3156,5 +3350,92 @@ class PrintStationDeleteView(LoginRequiredMixin, DeleteView):
         return self.post(request, *args, **kwargs) 
     
 
+from .models import PaymentReceived
+from .forms import PaymentReceivedForm 
 
-#modifications v3 
+# ---------- PAYMENT RECEIVED CRUD ----------
+
+class PaymentReceivedListView(LoginRequiredMixin, ListView):
+    model = PaymentReceived
+    template_name = 'payments/payment_received_list.html'
+    context_object_name = 'payments'
+    paginate_by = 20
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related('customer', 'supplier', 'bank_account').order_by('-date', '-created_at')
+        q = self.request.GET.get('q')
+        if q:
+            qs = qs.filter(customer__name__icontains=q) | qs.filter(supplier__name__icontains=q)
+        return qs
+
+class PaymentReceivedCreateView(LoginRequiredMixin, AjaxableResponseMixin, CreateView):
+    model = PaymentReceived
+    form_class = PaymentReceivedForm
+    template_name = 'payments/payment_received_form.html'
+    success_url = reverse_lazy('payment_received_list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['request'] = self.request
+        return kwargs
+
+class PaymentReceivedUpdateView(LoginRequiredMixin, AjaxableResponseMixin, UpdateView):
+    model = PaymentReceived
+    form_class = PaymentReceivedForm
+    template_name = 'payments/payment_received_form.html'
+    success_url = reverse_lazy('payment_received_list')
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['request'] = self.request
+        return kwargs
+
+class PaymentReceivedDeleteView(LoginRequiredMixin, DeleteView):
+    model = PaymentReceived
+    success_url = reverse_lazy('payment_received_list')
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self.object.delete()
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'message': 'Deleted'})
+        return super().delete(request, *args, **kwargs)
+    
+
+# core/views.py
+from .printing import build_market_list_bytes
+
+class MarketListView(LoginRequiredMixin, View):
+    template_name = 'inventory/market_list.html'
+
+    def get(self, request):
+        # Fetch all raw materials to populate the search dropdown
+        raw_materials = RawMaterial.objects.all().values('id', 'name', 'unit').order_by('name')
+        
+        # Serialize to JSON for the frontend JS
+        raw_materials_json = json.dumps(list(raw_materials))
+
+        return render(request, self.template_name, {
+            'raw_materials_json': raw_materials_json
+        })
+
+    def post(self, request):
+        try:
+            data = json.loads(request.body)
+            items = data.get('items', [])
+            
+            if not items:
+                return JsonResponse({'status': 'error', 'message': 'List is empty'})
+
+            # Generate Bytes
+            print_data = build_market_list_bytes(items)
+            
+            # Send to default POS80 Printer
+            # (Pass None to use the default defined in printing.py)
+            send_to_printer(print_data, printer_name=None)
+            
+            return JsonResponse({'status': 'success'})
+            
+        except Exception as e:
+            print(f"Market Print Error: {e}")
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
