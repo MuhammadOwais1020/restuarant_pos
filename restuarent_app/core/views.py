@@ -833,11 +833,11 @@ class OrderCreateView(LoginRequiredMixin, View):
                 if bill_enabled:
                     bill_printer = "POS80 Printer"
                     
-                    bill_data_cust = build_bill_bytes(order, is_food_panda, "Customer Copy")
+                    bill_data_cust = build_bill_bytes(order, is_food_panda, "")
                     send_to_printer(bill_data_cust, printer_name=bill_printer)
                     
-                    bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
-                    send_to_printer(bill_data_office, printer_name=bill_printer)
+                    # bill_data_office = build_bill_bytes(order, is_food_panda, "Office Copy")
+                    # send_to_printer(bill_data_office, printer_name=bill_printer)
 
             except Exception as e:
                 print(f"Printing Error: {e}")
@@ -1192,7 +1192,7 @@ def build_token_bytes(order, is_food_panda = "walk_in"):
     if order.isHomeDelivery == "yes":
         lines.append(b"HOME DELIVERY\n\n")
     if order.isHomeDelivery == "no":
-        lines.append(b"TAKE AWAY\n\n")
+        lines.append(b"PARCEL\n\n")
 
     lines.append(esc + b"\x21" + b"\x00")   # back to normal
     if order.waiter and order.isHomeDelivery == "yes":
@@ -1269,7 +1269,7 @@ def build_bill_bytes(order, is_food_panda = "walk_in", copy = ""):
         if order.isHomeDelivery == "yes":
             lines.append(b"HOME DELIVERY\n\n")
         if order.isHomeDelivery == "no":
-            lines.append(b"TAKE AWAY\n\n")
+            lines.append(b"PARCEL\n\n")
         if order.customer_name:
             customerName = str(order.customer_name).encode("ascii")
             lines.append(b"Customer Name: " + customerName + b"\n")
@@ -2976,7 +2976,7 @@ def build_token_bytes_for_items(order, items, header_label):
     if order.isHomeDelivery == "yes":
         lines.append(b"HOME DELIVERY\n\n")
     elif order.isHomeDelivery == "no":
-        lines.append(b"TAKE AWAY\n\n")
+        lines.append(b"PARCEL\n\n")
     lines.append(b"-" * 32 + b"\n")
     # 5) Items
     for idx, oi in enumerate(items, 1):

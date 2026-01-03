@@ -755,7 +755,7 @@ border: none;
 
           <button class="take-away-button" id="take-away-button" data-table-id="">
             <i class="fa fa-user fa-2x"></i>
-            <span>Take Away</span>
+            <span>PARCEL</span>
           </button>
 
       </div>
@@ -763,7 +763,7 @@ border: none;
     <!-- Order Items Table (scrollable) -->
     <div class="order-items-table">
       <!-- watermark overlay -->
-      <div id="order-watermark" class="watermark">Take Away Customer</div>
+      <div id="order-watermark" class="watermark">PARCEL Customer</div>
       <table>
         <thead>
           <tr>
@@ -1111,8 +1111,8 @@ border: none;
     takeAwayButton.addEventListener('click', function(){
         const tbody = document.getElementById('order-items-body');
       tbody.innerHTML = '';
-      document.getElementById('order-watermark').textContent = "Take Away";
-      document.getElementById('table-heading').textContent = "Take Away Customer";
+      document.getElementById('order-watermark').textContent = "PARCEL";
+      document.getElementById('table-heading').textContent = "PARCEL Customer";
       takeAwayButton.classList.add('active-class');
       document.getElementById('waiter-or-rider').textContent = "Waiter";
       document.getElementById('shipping-or-service').textContent = "Service Charges";
@@ -1125,7 +1125,7 @@ border: none;
 
   // 3) Clear out the in-memory buffer
   selectedItems = [];
-  takeAwayButton.addEventListener = "Take Away Customer";
+  takeAwayButton.addEventListener = "PARCEL Customer";
   document.getElementById("customer-info-row").style.display="flex";
   document.getElementById('waiter-select').selectedIndex = 0;
   // 5) Re-render the table
@@ -2198,7 +2198,7 @@ printTokenBtn.addEventListener('click', () => {
     document.getElementById('waiter-or-rider').textContent = "Waiter";
     document.getElementById('shipping-or-service').textContent = "Service Charges";
   } else if (text == "takeaway") {
-    label = 'Take Away';
+    label = 'PARCEL';
   } else {
     label = `Table ${text}`;
   }
