@@ -4,286 +4,330 @@
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+
 <style>
-  .kpi-card{background:#fff;border-radius:.5rem;box-shadow:0 2px 8px rgba(0,0,0,.06);padding:1rem}
-  .kpi-val{font-size:1.35rem;font-weight:700}
-  .kpi-label{color:#6c757d;font-size:.85rem}
-  .filters .form-label{margin-bottom:.25rem}
-  .chart-card{background:#fff;border-radius:.5rem;box-shadow:0 2px 8px rgba(0,0,0,.06);padding:1rem;height:100%}
+  /* KPI Cards */
+  .kpi-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,.05);
+    padding: 1.5rem;
+    height: 100%;
+    border-left: 5px solid transparent;
+    transition: transform 0.2s;
+  }
+  .kpi-card:hover { transform: translateY(-3px); }
+  .kpi-card.blue { border-color: #3c8aff; }
+  .kpi-card.orange { border-color: #fb933e; }
+  .kpi-card.red { border-color: #f55061; }
+  .kpi-card.green { border-color: #38cc87; }
+
+  .kpi-val { font-size: 1.6rem; font-weight: 800; color: #333; margin-top: 5px; }
+  .kpi-label { color: #888; font-size: 0.9rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Charts */
+  .chart-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,.05);
+    padding: 1.25rem;
+    height: 100%;
+    border: 1px solid #f0f0f0;
+  }
+  .chart-title { font-weight: 700; color: #444; margin-bottom: 1rem; font-size: 1.05rem; }
+  
+  /* Filter Bar */
+  .filter-bar {
+    background: #fff;
+    padding: 1rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.05);
+    margin-bottom: 1.5rem;
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-3">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="fa fa-chart-line"></i> Reports & Analytics</h4>
+<div class="container-fluid py-4" style="background-color: #f8f9fa;">
+  
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="mb-0 fw-bold text-dark"><i class="fa fa-chart-pie me-2 text-primary"></i>Analytics Dashboard</h3>
+    <div class="text-muted small">Real-time data overview</div>
   </div>
 
-  <!-- Filters -->
-  <form method="get" class="filters row g-2 align-items-end mb-3">
-    <div class="col-12 col-lg-3">
-      <label class="form-label">From (date & time)</label>
-      <input type="datetime-local" name="from" class="form-control" value="{{ from }}">
+  <form method="get" class="filter-bar row g-3 align-items-end">
+    <div class="col-6 col-md-3">
+      <label class="form-label fw-bold text-secondary small">Date From</label>
+      <input type="datetime-local" name="from" class="form-control form-control-sm" value="{{ from }}">
     </div>
-    <div class="col-12 col-lg-3">
-      <label class="form-label">To (date & time)</label>
-      <input type="datetime-local" name="to" class="form-control" value="{{ to }}">
+    <div class="col-6 col-md-3">
+      <label class="form-label fw-bold text-secondary small">Date To</label>
+      <input type="datetime-local" name="to" class="form-control form-control-sm" value="{{ to }}">
     </div>
-    <div class="col-12 col-lg-3">
-      <label class="form-label">Business Mode</label>
-      <select name="mode" class="form-select">
-        <option value="recipe" {% if mode == 'recipe' %}selected{% endif %}>Recipe (COGS from recipes)</option>
-        <option value="simple" {% if mode == 'simple' %}selected{% endif %}>Simple (Purchases as cost)</option>
+    <div class="col-6 col-md-3">
+      <label class="form-label fw-bold text-secondary small">Mode</label>
+      <select name="mode" class="form-select form-select-sm">
+        <option value="recipe" {% if mode == 'recipe' %}selected{% endif %}>Detailed (Recipe Cost)</option>
+        <option value="simple" {% if mode == 'simple' %}selected{% endif %}>Simple (Purchases)</option>
       </select>
     </div>
-    <div class="col-12 col-lg-3 d-flex gap-2">
-      <button class="btn btn-primary w-100"><i class="fa fa-filter"></i> Apply</button>
-      <button type="button" class="btn btn-outline-secondary w-100" onclick="window.print()"><i class="fa fa-print"></i> Print</button>
+    <div class="col-6 col-md-3 d-flex gap-2">
+      <button class="btn btn-primary btn-sm w-100 fw-bold"><i class="fa fa-sync-alt me-1"></i> Update</button>
+      <button type="button" class="btn btn-dark btn-sm w-100 fw-bold" onclick="window.print()"><i class="fa fa-print me-1"></i> Print</button>
     </div>
   </form>
 
-  <!-- KPIs -->
-  <div class="row g-3 mb-2">
-    <div class="col-6 col-lg-3"><div class="kpi-card"><div class="kpi-label">Revenue</div><div class="kpi-val">₨ {{ kpi_revenue }}</div></div></div>
-    <div class="col-6 col-lg-3"><div class="kpi-card"><div class="kpi-label">{{ cost_label }}</div><div class="kpi-val">₨ {{ kpi_cost }}</div></div></div>
-    <div class="col-6 col-lg-3"><div class="kpi-card"><div class="kpi-label">Other Expenses</div><div class="kpi-val">₨ {{ kpi_other }}</div></div></div>
-    <div class="col-6 col-lg-3"><div class="kpi-card"><div class="kpi-label">Net Profit</div><div class="kpi-val">₨ {{ kpi_profit }}</div></div></div>
+  <div class="row g-4 mb-4">
+    <div class="col-12 col-sm-6 col-xl-3">
+      <div class="kpi-card blue">
+        <div class="kpi-label">Total Revenue</div>
+        <div class="kpi-val">₨ {{ kpi_revenue }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <div class="kpi-card orange">
+        <div class="kpi-label">{{ cost_label }}</div>
+        <div class="kpi-val">₨ {{ kpi_cost }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <div class="kpi-card red">
+        <div class="kpi-label">Operational Exp.</div>
+        <div class="kpi-val">₨ {{ kpi_other }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-xl-3">
+      <div class="kpi-card green">
+        <div class="kpi-label">Net Profit</div>
+        <div class="kpi-val text-success">₨ {{ kpi_profit }}</div>
+      </div>
+    </div>
   </div>
 
-  <!-- Charts -->
-  <div class="row g-3">
-    <div class="col-12 col-xl-7">
+  <div class="row g-4 mb-4">
+    <div class="col-12 col-xl-8">
       <div class="chart-card">
-        <h6 class="mb-2">Daily Revenue vs Cost vs Profit</h6>
-        <canvas id="dailyChart"></canvas>
+        <div class="chart-title">Daily Financial Performance</div>
+        <div style="height: 300px;">
+          <canvas id="dailyChart"></canvas>
+        </div>
       </div>
     </div>
-    <div class="col-12 col-xl-5">
+    <div class="col-12 col-xl-4">
       <div class="chart-card">
-        <h6 class="mb-2">Monthly Trend (Last 12 Months)</h6>
-        <canvas id="trendChart"></canvas>
-      </div>
-    </div>
-    <div class="col-12">
-      <div class="chart-card">
-        <h6 class="mb-2">Expenses by Category (in selected range)</h6>
-        <canvas id="expenseChart"></canvas>
+        <div class="chart-title">12-Month Trend</div>
+        <div style="height: 300px;">
+          <canvas id="trendChart"></canvas>
+        </div>
       </div>
     </div>
   </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-12 col-xl-6">
+      <div class="chart-card">
+        <div class="chart-title d-flex justify-content-between">
+          <span>Category Performance</span>
+          <span class="badge bg-primary">Revenue</span>
+        </div>
+        <div style="height: 380px;">
+          <canvas id="salesCategoryChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+      <div class="chart-card">
+        <div class="chart-title">Expense Distribution</div>
+        <div style="height: 380px; display:flex; justify-content:center;">
+          <canvas id="expenseChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12">
+      <div class="chart-card h-auto">
+        <div class="chart-title">Top Selling Items (Qty)</div>
+        <div class="table-responsive" style="max-height: 400px;">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th style="width: 70%;">Item Name</th>
+                <th class="text-end">Quantity Sold</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in items_sold %}
+                <tr>
+                  <td class="fw-bold text-secondary">{{ row.name }}</td>
+                  <td class="text-end fw-bold font-monospace">{{ row.qty }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="2" class="text-muted text-center py-4">No sales in selected period.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
-  // Data from view
-  const days    = {{ days|safe }};
-  const rev     = {{ series_revenue|safe }};
-  const cost    = {{ series_cost|safe }};
-  const expense = {{ series_expense|safe }};
-  const profit  = {{ series_profit|safe }};
+  // 1. Register DataLabels Plugin
+  Chart.register(ChartDataLabels);
 
-  const months  = {{ months|safe }};
-  const trendR  = {{ trend_revenue|safe }};
-  const trendP  = {{ trend_profit|safe }};
+  // -- Data Injection --
+  const days     = {{ days|safe }};
+  const rev      = {{ series_revenue|safe }};
+  const cost     = {{ series_cost|safe }};
+  const exp      = {{ series_expense|safe }};
+  const profit   = {{ series_profit|safe }};
+  
+  const months   = {{ months|safe }};
+  const trendR   = {{ trend_revenue|safe }};
+  const trendP   = {{ trend_profit|safe }};
 
-  // Bootstrap-like palette
-  const COLORS = {
-    revenue:  { line: '#3c8affff', fill: 'rgba(13,110,253,.12)' },   // primary
-    cost:     { line: '#fb933eff', fill: 'rgba(253,126,20,.12)' },    // orange
-    expense:  { line: '#f55061ff', fill: 'rgba(220,53,69,.12)' },     // danger
-    profit:   { line: '#38cc87ff', fill: 'rgba(25,135,84,.15)' },     // success
-  };
+  const salesLabels = {{ sales_cat_labels|safe }};
+  const salesRev    = {{ sales_cat_revs|safe }};
+  const salesQty    = {{ sales_cat_qtys|safe }};
 
-  // Daily combined line
+  const expLabels   = {{ exp_cat_labels|safe }};
+  const expVals     = {{ exp_cat_values|safe }};
+
+  // -- Config --
+  Chart.defaults.font.family = "'Segoe UI', sans-serif";
+  Chart.defaults.color = '#666';
+  
+  const fmtMoney = (val) => '₨ ' + Number(val).toLocaleString('en-PK');
+
+  // --- 1. Daily Chart (Line) ---
   new Chart(document.getElementById('dailyChart'), {
     type: 'line',
     data: {
       labels: days,
       datasets: [
-        {
-          label: 'Revenue',
-          data: rev,
-          borderWidth: 2,
-          fill: true,
-          borderColor: COLORS.revenue.line,
-          backgroundColor: COLORS.revenue.fill,
-          pointRadius: 2,
-          pointBackgroundColor: COLORS.revenue.line,
-          tension: 0.25
-        },
-        {
-          label: '{{ cost_label }}',
-          data: cost,
-          borderWidth: 2,
-          fill: true,
-          borderColor: COLORS.cost.line,
-          backgroundColor: COLORS.cost.fill,
-          pointRadius: 2,
-          pointBackgroundColor: COLORS.cost.line,
-          tension: 0.25
-        },
-        {
-          label: 'Other Expenses',
-          data: expense,
-          borderWidth: 2,
-          fill: true,
-          borderColor: COLORS.expense.line,
-          backgroundColor: COLORS.expense.fill,
-          pointRadius: 2,
-          pointBackgroundColor: COLORS.expense.line,
-          tension: 0.25
-        },
-        {
-          label: 'Profit',
-          data: profit,
-          borderWidth: 2,
-          fill: true,
-          borderColor: COLORS.profit.line,
-          backgroundColor: COLORS.profit.fill,
-          pointRadius: 2,
-          pointBackgroundColor: COLORS.profit.line,
-          tension: 0.25
-        },
-      ],
+        { label: 'Revenue', data: rev, borderColor: '#3c8aff', backgroundColor: 'rgba(60,138,255,0.1)', fill: true, tension: 0.3, pointRadius:2 },
+        { label: 'Cost', data: cost, borderColor: '#fb933e', backgroundColor: 'transparent', borderDash:[5,5], tension: 0.3, pointRadius:0 },
+        { label: 'Profit', data: profit, borderColor: '#38cc87', backgroundColor: 'transparent', tension: 0.3, pointRadius:2 },
+      ]
     },
     options: {
-      responsive: true,
+      responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'top' }
+        datalabels: { display: false }, // Hide labels for messy line charts
+        tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ' + fmtMoney(ctx.raw) } }
       },
       scales: {
-        x: { grid: { display: false } },
-        y: { beginAtZero: true }
+        x: { grid: {display:false} },
+        y: { beginAtZero: true, grid:{color:'#f0f0f0'} }
       }
     }
   });
 
-  // Monthly trend bars
+  // --- 2. Trend Chart (Bar) ---
   new Chart(document.getElementById('trendChart'), {
     type: 'bar',
     data: {
       labels: months,
       datasets: [
-        {
-          label: 'Revenue',
-          data: trendR,
-          backgroundColor: COLORS.revenue.line,
-          borderColor: COLORS.revenue.line,
-          borderWidth: 1
-        },
-        {
-          label: 'Profit',
-          data: trendP,
-          backgroundColor: COLORS.profit.line,
-          borderColor: COLORS.profit.line,
-          borderWidth: 1
-        },
-      ],
+        { label: 'Revenue', data: trendR, backgroundColor: '#3c8aff', borderRadius: 4 },
+        { label: 'Profit', data: trendP, backgroundColor: '#38cc87', borderRadius: 4 }
+      ]
     },
     options: {
-      responsive: true,
+      responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { position: 'top' }
+        datalabels: { display: false }, // Hide to keep clean
+      },
+      scales: { x: {stacked: false, grid:{display:false}}, y: {beginAtZero: true, grid:{display:false}} }
+    }
+  });
+
+  // --- 3. Sales Category (Horizontal Bar with VALUES) ---
+  new Chart(document.getElementById('salesCategoryChart'), {
+    type: 'bar',
+    data: {
+      labels: salesLabels,
+      datasets: [{
+        label: 'Revenue',
+        data: salesRev,
+        backgroundColor: [
+          '#3c8aff', '#6610f2', '#6f42c1', '#d63384', '#dc3545', 
+          '#fd7e14', '#ffc107', '#198754', '#20c997', '#0dcaf0'
+        ],
+        borderRadius: 4,
+        barPercentage: 0.6,
+      }]
+    },
+    options: {
+      indexAxis: 'y', // Horizontal bars
+      responsive: true, maintainAspectRatio: false,
+      layout: {
+        padding: { right: 50 } // Add space on right for the labels
+      },
+      plugins: {
+        legend: { display: false },
+        // ** DATALABELS CONFIGURATION **
+        datalabels: {
+          anchor: 'end',
+          align: 'end',
+          color: '#333',
+          font: { weight: 'bold', size: 11 },
+          formatter: function(value, context) {
+             return fmtMoney(value); // Shows "₨ 1,200" directly on chart
+          }
+        },
+        tooltip: {
+            callbacks: {
+                label: function(ctx) {
+                    let r = ctx.raw;
+                    let q = salesQty[ctx.dataIndex]; 
+                    return `Revenue: ${fmtMoney(r)}  (Qty: ${q})`;
+                }
+            }
+        }
       },
       scales: {
-        x: { stacked: false },
-        y: { beginAtZero: true }
+        x: { grid:{display:false}, ticks:{display:false} }, // Hide X axis numbers for cleaner look
+        y: { grid:{display:false} }
+      }
+    }
+  });
+
+  // --- 4. Expense (Doughnut with %) ---
+  new Chart(document.getElementById('expenseChart'), {
+    type: 'doughnut',
+    data: {
+      labels: expLabels,
+      datasets: [{
+        data: expVals,
+        backgroundColor: ['#f55061', '#fb933e', '#ffc107', '#38cc87', '#3c8aff', '#6f42c1'],
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels:{boxWidth:12, font:{size:11}} },
+        datalabels: {
+            color: '#fff',
+            font: { weight: 'bold' },
+            formatter: (value, ctx) => {
+                let sum = 0;
+                let dataArr = ctx.chart.data.datasets[0].data;
+                dataArr.map(data => { sum += data; });
+                let percentage = (value*100 / sum).toFixed(0)+"%";
+                return percentage === "0%" ? "" : percentage; // Only show if > 0%
+            }
+        }
       }
     }
   });
 </script>
-
-
-{# ================= Extra Analytics (appended) ================= #}
-<div class="row g-3 mt-3">
-  <!-- Just Sales (Revenue) -->
-  <div class="col-12 col-xl-6">
-    <div class="chart-card">
-      <h6 class="mb-2">Sales (Revenue Only)</h6>
-      <canvas id="revenueOnlyChart"></canvas>
-    </div>
-  </div>
-
-  <!-- Sales by Category -->
-  <div class="col-12 col-xl-6">
-    <div class="chart-card">
-      <h6 class="mb-2">Sales by Category (Qty)</h6>
-      <canvas id="salesByCategoryChart"></canvas>
-    </div>
-  </div>
-</div>
-
-<div class="row g-3 mt-3">
-  <!-- Expenses by Category -->
-  <div class="col-12 col-xl-6">
-    <div class="chart-card">
-      <h6 class="mb-2">Expenses by Category (Selected Range)</h6>
-      <canvas id="expenseByCategoryChart"></canvas>
-    </div>
-  </div>
-
-  <!-- Items Sold (full list) -->
-  <div class="col-12 col-xl-6">
-    <div class="chart-card">
-      <h6 class="mb-2">All Items Sold (Qty) — Includes items inside deals</h6>
-      <div class="table-responsive">
-        <table class="table table-sm table-striped align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th style="width:60%">Item</th>
-              <th class="text-end">Quantity Sold</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in items_sold %}
-              <tr>
-                <td>{{ row.name }}</td>
-                <td class="text-end">{{ row.qty }}</td>
-              </tr>
-            {% empty %}
-              <tr><td colspan="2" class="text-muted text-center">No sales in this period.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-<script>
-  // Extra datasets from view
-  const catLabels   = {{ sales_cat_labels|safe }};
-  const catValues   = {{ sales_cat_values|safe }};
-  const expCatLbls  = {{ exp_cat_labels|safe }};
-  const expCatVals  = {{ exp_cat_values|safe }};
-
-  // Sales (Revenue Only) — simple line using the same days/revenue series
-  new Chart(document.getElementById('revenueOnlyChart'), {
-    type: 'line',
-    data: {
-      labels: {{ days|safe }},
-      datasets: [{ label: 'Revenue', data: {{ series_revenue|safe }}, borderWidth: 2, fill: true }]
-    }
-  });
-
-  // Sales by Category (Qty)
-  new Chart(document.getElementById('salesByCategoryChart'), {
-    type: 'bar',
-    data: {
-      labels: catLabels,
-      datasets: [{ label: 'Qty', data: catValues }]
-    },
-    options: { indexAxis: 'y' }
-  });
-
-  // Expenses by Category (mode aware)
-  new Chart(document.getElementById('expenseByCategoryChart'), {
-    type: 'doughnut',
-    data: {
-      labels: expCatLbls,
-      datasets: [{ label: 'Amount', data: expCatVals }]
-    }
-  });
-</script>
-
 {% endblock %}

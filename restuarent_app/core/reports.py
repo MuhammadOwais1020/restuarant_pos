@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from datetime import datetime, timedelta, date
 from typing import Literal
+from collections import defaultdict
 
 from django.db.models import (
     Sum, F, Case, When, Value, DecimalField, ExpressionWrapper, DateTimeField, Max
@@ -11,6 +12,7 @@ from django.db.models.functions import TruncMonth, TruncDate, Coalesce
 from django.utils import timezone as tz
 from django.views.generic import TemplateView
 from django.http import JsonResponse
+from django.contrib.auth.mixins import LoginRequiredMixin
 
 from .models import Order, OrderItem, Expense, PurchaseOrder, MenuItem, Deal, DealItem
 
@@ -87,12 +89,10 @@ def _business_mode(request) -> Mode:
 
 # ---------- Main dashboard view ----------
 
-class ReportsOverviewView(TemplateView):
+class ReportsOverviewView(LoginRequiredMixin, TemplateView):
     template_name = "reports/overview.html"
 
     def get_context_data(self, **kwargs):
-        from collections import defaultdict
-
         ctx = super().get_context_data(**kwargs)
         start_dt, end_dt = _aware_start_end(self.request)
         mode: Mode = _business_mode(self.request)
@@ -105,14 +105,14 @@ class ReportsOverviewView(TemplateView):
         )
         items = OrderItem.objects.filter(order__in=paid_orders)
 
-        # expenses: prefer created_at; if null, treat as start_dt just for filtering
+        # expenses
         expenses = (
             Expense.objects
             .annotate(ed=Coalesce(F("created_at"), Value(start_dt, output_field=DateTimeField())))
             .filter(ed__gte=start_dt, ed__lte=end_dt)
         )
 
-        # purchases by created_at
+        # purchases
         purchases = PurchaseOrder.objects.filter(
             created_at__gte=start_dt,
             created_at__lte=end_dt,
@@ -132,9 +132,10 @@ class ReportsOverviewView(TemplateView):
 
         net_profit = revenue - cogs - others
 
-        # --- Daily series in the selected range ---
+        # --- Daily series ---
         money = ExpressionWrapper(F("quantity") * F("unit_price"),
                                   output_field=DecimalField(max_digits=14, decimal_places=2))
+        
         rev_by_day = (
             items.annotate(d=TruncDate("order__created_at"))
                  .values("d")
@@ -238,14 +239,12 @@ class ReportsOverviewView(TemplateView):
                 .aggregate(s=Coalesce(Sum("amount"), DEC0))["s"] or Decimal("0")
             )
 
-            months_last = next_m  # advance below
+            months_last = next_m
             rev_month.append(float(r))
             profit_month.append(float(r - c - e))
             m = months_last
 
-        # ---------- EXTRA SECTIONS (ADDED ONLY; NOTHING ABOVE REMOVED) ----------
-
-        # A) Expenses by Category (mode-aware: include 'purchase' only in simple mode)
+        # --- Expenses Categories ---
         exp_for_chart = expenses
         if mode != "simple":
             exp_for_chart = exp_for_chart.exclude(category__iexact="purchase")
@@ -257,11 +256,12 @@ class ReportsOverviewView(TemplateView):
         exp_cat_labels = [(r["category"] or "Other").replace("_", " ").title() for r in exp_cat_rows]
         exp_cat_values = [float(r["total"] or 0) for r in exp_cat_rows]
 
-        # B) Sales by Category (quantity), counting items inside deals
-        item_qty = defaultdict(int)   # (menu_item_id, name) -> qty
-        cat_qty  = defaultdict(int)   # category name -> qty
-
-        # direct menu item rows
+        # --- Sales Analytics (Hybrid approach) ---
+        # 1. Qty (Exploded for detail - as per previous logic which users liked)
+        item_qty = defaultdict(int)
+        cat_qty  = defaultdict(int)
+        
+        # Direct Items
         direct = (
             OrderItem.objects
             .filter(order__in=paid_orders, menu_item__isnull=False)
@@ -270,37 +270,77 @@ class ReportsOverviewView(TemplateView):
         )
         for r in direct:
             q = int(r["q"] or 0)
-            name = r["menu_item__name"]
             mid = r["menu_item_id"]
+            name = r["menu_item__name"]
             cat = r["menu_item__category__name"] or "Uncategorized"
             item_qty[(mid, name)] += q
             cat_qty[cat] += q
 
-        # expand deals into their component menu items
+        # Exploded Deals (for Quantity Chart only)
         deal_qs = (
             OrderItem.objects
             .filter(order__in=paid_orders, deal__isnull=False)
             .values("deal_id")
             .annotate(q=Sum("quantity"))
         )
-        deal_qty = {row["deal_id"]: int(row["q"] or 0) for row in deal_qs}
-        if deal_qty:
-            for di in DealItem.objects.filter(deal_id__in=deal_qty.keys()).select_related("menu_item__category"):
-                comp_total = deal_qty.get(di.deal_id, 0) * int(di.quantity or 0)
+        deal_qty_map = {row["deal_id"]: int(row["q"] or 0) for row in deal_qs}
+        if deal_qty_map:
+            for di in DealItem.objects.filter(deal_id__in=deal_qty_map.keys()).select_related("menu_item__category"):
+                comp_total = deal_qty_map.get(di.deal_id, 0) * int(di.quantity or 0)
                 mid = di.menu_item_id
                 name = di.menu_item.name
                 cat = di.menu_item.category.name if getattr(di.menu_item, "category_id", None) else "Uncategorized"
                 item_qty[(mid, name)] += comp_total
                 cat_qty[cat] += comp_total
 
-        # sorted outputs
+        # 2. Revenue (Strict Financial - Deals grouped as 'Deals')
+        # This is better for "Cash Collection" as it matches the order total.
+        cat_revenue = defaultdict(Decimal)
+        
+        # Revenue from Menu Items
+        rev_direct = (
+            OrderItem.objects
+            .filter(order__in=paid_orders, menu_item__isnull=False)
+            .values("menu_item__category__name")
+            .annotate(total=Sum(F('quantity') * F('unit_price')))
+        )
+        for r in rev_direct:
+            c = r["menu_item__category__name"] or "Uncategorized"
+            cat_revenue[c] += (r["total"] or Decimal(0))
+            
+        # Revenue from Deals (Categorized as "Deals & Offers")
+        rev_deals = (
+             OrderItem.objects
+            .filter(order__in=paid_orders, deal__isnull=False)
+            .aggregate(total=Sum(F('quantity') * F('unit_price')))
+        )
+        if rev_deals['total']:
+             cat_revenue["Deals & Offers"] += rev_deals['total']
+             # Also add Deal Qty to the Qty chart under "Deals" to be safe, 
+             # OR we keep the exploded view. 
+             # Let's keep existing exploded view for Qty, but Financial view uses this.
+
+        # Sort Category Data (Merging Qty and Revenue keys)
+        all_cats = set(cat_qty.keys()) | set(cat_revenue.keys())
+        cat_stats = []
+        for c in all_cats:
+            cat_stats.append({
+                'label': c,
+                'qty': cat_qty.get(c, 0),
+                'revenue': float(cat_revenue.get(c, 0))
+            })
+        
+        # Sort by Revenue descending
+        cat_stats.sort(key=lambda x: x['revenue'], reverse=True)
+
+        sales_cat_labels = [x['label'] for x in cat_stats]
+        sales_cat_qtys = [x['qty'] for x in cat_stats]
+        sales_cat_revs = [x['revenue'] for x in cat_stats]
+
+        # Top Items List
         items_sorted = sorted(item_qty.items(), key=lambda kv: (-kv[1], kv[0][1]))
         items_sold = [{"name": name, "qty": qty} for ((_, name), qty) in items_sorted]
-        cats_sorted = sorted(cat_qty.items(), key=lambda kv: -kv[1])
-        sales_cat_labels = [name for name, _ in cats_sorted]
-        sales_cat_values = [qty for _, qty in cats_sorted]
 
-        # ---------- existing context ----------
         ctx.update({
             "mode": mode,
             "cost_label": cost_label,
@@ -318,28 +358,22 @@ class ReportsOverviewView(TemplateView):
             "months": months,
             "trend_revenue": rev_month,
             "trend_profit":  profit_month,
-        })
-
-        # ---------- extra context (ADDED below your existing cards/charts) ----------
-        ctx.update({
+            
+            # Updated Charts Data
             "exp_cat_labels": exp_cat_labels,
             "exp_cat_values": exp_cat_values,
+            
             "sales_cat_labels": sales_cat_labels,
-            "sales_cat_values": sales_cat_values,
-            "sales_items_labels": [it["name"] for it in items_sold],
-            "sales_items_values": [it["qty"] for it in items_sold],
-            "items_sold": items_sold,  # for the table
+            "sales_cat_qtys":   sales_cat_qtys,
+            "sales_cat_revs":   sales_cat_revs,
+            
+            "items_sold": items_sold,
         })
 
         return ctx
 
-
 # ---------- JSON endpoint ----------
 def api_sales_report(request):
-    """
-    Datetime-aware filtering.
-    GET ?from=YYYY-MM-DDTHH:MM&to=YYYY-MM-DDTHH:MM
-    """
     start_dt, end_dt = _aware_start_end(request)
     qs = (
         OrderItem.objects

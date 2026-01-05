@@ -473,7 +473,6 @@ from .models import Waiter
 from django.utils import timezone
 
 # core/views.py
-
 import json
 from decimal import Decimal
 from django.http import HttpResponseBadRequest, JsonResponse
@@ -489,6 +488,8 @@ from .models import (
 )
 from .utils import get_next_token_number
 from .printing import send_to_printer
+
+
 
 
 class OrderCreateView(LoginRequiredMixin, View):
@@ -848,7 +849,9 @@ class OrderCreateView(LoginRequiredMixin, View):
                 }, status=200)
 
         return JsonResponse({"message": "Order Created", "order_id": order.id})
-    
+
+
+
 import json
 from django.shortcuts      import render, get_object_or_404
 from django.http           import JsonResponse, HttpResponseBadRequest
@@ -2951,43 +2954,56 @@ ESC = b"\x1B"
 GS  = b"\x1D"
 
 def build_token_bytes_for_items(order, items, header_label):
+    """
+    Builds token for Walk-in/Delivery orders.
+    """
+    ESC = b"\x1B"
+    GS  = b"\x1D"
     lines = []
-    # 1) Header
-    lines.append(ESC + b"\x61" + b"\x01")   # center alignment
-    # lines.append(esc + b"\x21" + b"\x30")   # double height & width
+
+    # 1) Restaurant Name
+    lines.append(ESC + b"\x61" + b"\x01")   # Center
+    # lines.append(ESC + b"\x21" + b"\x30") # Double height/width (Optional for Rest Name)
     lines.append(b"NEW MARHABA\n")
-    lines.append(ESC + b"\x21" + b"\x00")   # back to normal
+    lines.append(ESC + b"\x21" + b"\x00")   # Reset
     lines.append(b"\n")
 
-    lines.append(ESC + b"\x61" + b"\x01")              # center
-    lines.append(header_label.encode("ascii") + b"\n\n")
-    # 2) Token #
+    # 2) STATION NAME (Large) <--- THIS IS THE FIX
+    lines.append(ESC + b"\x61" + b"\x01")   # Center
+    lines.append(ESC + b"\x21" + b"\x20")   # Double Width (or \x30 for Double Height+Width)
+    lines.append(header_label.encode("ascii", "ignore") + b"\n") 
+    lines.append(ESC + b"\x21" + b"\x00")   # Reset
+    lines.append(b"\n")
+
+    # 3) Token #
     token_str = str(order.token_number).encode("ascii")
-    lines.append(ESC + b"\x21" + b"\x30")              # double width
+    lines.append(ESC + b"\x21" + b"\x30")   # Double Height+Width
     lines.append(b"TOKEN #: " + token_str + b"\n\n")
-    lines.append(ESC + b"\x21" + b"\x00")              # back to normal
-    # 3) Date/Time
+    lines.append(ESC + b"\x21" + b"\x00")   # Reset
+
+    # 4) Date/Time & Waiter
     dt = order.created_at.strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
-    lines.append(ESC + b"\x61" + b"\x00")              # left
+    lines.append(ESC + b"\x61" + b"\x00")   # Left
     lines.append(b"Date: " + dt + b"\n")
     if order.waiter:
         lines.append(f"Waiter: {order.waiter.name}\n".encode("ascii", "ignore"))
-    # 4) Delivery / Take-Away
+
+    # 5) Order Type
     if order.isHomeDelivery == "yes":
         lines.append(b"HOME DELIVERY\n\n")
-    elif order.isHomeDelivery == "no":
-        lines.append(b"PARCEL\n\n")
+    elif order.isHomeDelivery == "no" and not order.table:
+        lines.append(b"TAKE AWAY\n\n") # Or PARCEL
+    
     lines.append(b"-" * 32 + b"\n")
-    # 5) Items
+
+    # 6) Items
     for idx, oi in enumerate(items, 1):
         name = (oi.menu_item.name if oi.menu_item else oi.deal.name)[:20]
         name_field = name.ljust(20).encode("ascii", "ignore")
         qty = str(oi.quantity).rjust(3).encode("ascii")
         lines.append(f"{idx}. ".encode("ascii") + name_field + b" x" + qty + b"\n")
-    # 6) Cut
 
-    lines.append(b"\n\n")
-    lines.append(b"\n\n\n\n" + GS + b"\x56" + b"\x00")
+    lines.append(b"\n\n\n\n" + GS + b"\x56" + b"\x00") # Cut
     return b"".join(lines)
 
 
@@ -3119,9 +3135,8 @@ class TablePrintTokenView(View):
     def post(self, request, table_id):
         session = get_object_or_404(TableSession, table_id=table_id)
         
-        # 1. Ensure TableSession has a global token number (for reference)
+        # 1. Ensure TableSession has a global token number
         if session.token_number is None:
-            # station=None gets the global sequence
             session.token_number = get_next_token_number(station=None)
             session.save(update_fields=['token_number'])
 
@@ -3134,7 +3149,6 @@ class TablePrintTokenView(View):
             return JsonResponse({'status': 'nothing_to_print'})
 
         # 3. Group items by PrintStation
-        #    Key: Station object (or 'Global' string for default), Value: List of (ti, delta)
         grouped_items = {}
 
         for ti, d in items_with_delta:
@@ -3142,43 +3156,36 @@ class TablePrintTokenView(View):
             if ti.source_type == 'menu':
                 try:
                     mi = MenuItem.objects.get(pk=ti.source_id)
-                    # Use the helper method we added to MenuItem to find the station
                     station = mi.get_effective_station()
                 except MenuItem.DoesNotExist:
                     pass
             elif ti.source_type == 'deal':
-                # Logic for deals: currently they default to Global (Main Kitchen)
-                # You can add logic here if Deals need specific stations
                 pass 
 
-            # If no station is found, group under "Global"
             key = station if station else 'Global'
-            
             if key not in grouped_items:
                 grouped_items[key] = []
+            
             grouped_items[key].append((ti, d))
 
         # 4. Process each group and print
         for key, group_items in grouped_items.items():
             
-            # Determine Header and Token Number for this specific group
+            # Defaults
+            target_printer = "POS80 Printer"
+            token_num = session.token_number
+
             if key == 'Global':
-                # Default behavior
                 header_label = "KITCHEN TOKEN"
-                token_num = session.token_number # Use the session's global token
             else:
-                # It is a specific PrintStation configuration
                 station_obj = key
                 header_label = f"{station_obj.name.upper()} TOKEN"
-                
-                # Check if this station needs its own separate counting sequence (1, 2, 3...)
+                if station_obj.printer_name:
+                    target_printer = station_obj.printer_name
                 if station_obj.use_separate_sequence:
                     token_num = get_next_token_number(station=station_obj)
-                else:
-                    # Otherwise share the main token number
-                    token_num = session.token_number
 
-            # Build the print bytes using the new dynamic helper
+            # Build Bytes
             payload = build_dynamic_token_bytes(
                 session, 
                 group_items, 
@@ -3186,53 +3193,51 @@ class TablePrintTokenView(View):
                 token_num
             )
             
-            # Send to printer
-            print(f"Printing {header_label} with Token {token_num}")
+            print(f"Printing {header_label} to {target_printer}")
             try:
-                send_to_printer(payload)
+                send_to_printer(payload, printer_name=target_printer)
             except Exception as e:
                 print(f"Printer Error for {header_label}: {e}")
 
-        # 5. Update printed quantities for all items processed
-        for ti, _ in items_with_delta:
+        # 5. Update printed quantities
+        for ti, d in items_with_delta:
             ti.printed_quantity = ti.quantity
             ti.save(update_fields=['printed_quantity'])
 
         return JsonResponse({
             'status': 'printed', 
             'count': len(items_with_delta)
-        })
-
+        }) 
 
 def build_dynamic_token_bytes(session, items_with_delta, header_label, token_number):
     """
-    Generates ESC/POS bytes for a dynamic station token.
+    Builds token for Table Sessions.
     """
     ESC = b"\x1B"
     GS  = b"\x1D"
     lines = []
 
-    # -- Header (Center, Double Width) --
-    lines.append(ESC + b"\x61" + b"\x01") 
-    lines.append(ESC + b"\x21" + b"\x20") 
+    # 1. Station Header (Large)
+    lines.append(ESC + b"\x61" + b"\x01") # Center
+    lines.append(ESC + b"\x21" + b"\x20") # Double Width
     lines.append(header_label.encode("ascii", "ignore") + b"\n")
     lines.append(ESC + b"\x21" + b"\x00") # Reset
     lines.append(b"\n")
 
-    # -- Token # (Center, Double Width/Height) --
+    # 2. Token #
     token_str = str(token_number).encode("ascii")
-    lines.append(ESC + b"\x21" + b"\x30") 
+    lines.append(ESC + b"\x21" + b"\x30") # Double H/W
     lines.append(b"TOKEN #: " + token_str + b"\n\n")
     lines.append(ESC + b"\x21" + b"\x00") 
 
-    # -- Table # (Center, Double Width) --
+    # 3. Table Info
     table_no = str(session.table.number).encode("ascii")
     lines.append(ESC + b"\x61" + b"\x01")
     lines.append(ESC + b"\x21" + b"\x30")
     lines.append(b"TABLE #: " + table_no + b"\n\n")
     lines.append(ESC + b"\x21" + b"\x00")
 
-    # -- Meta Info (Left Align) --
+    # 4. Meta
     now = timezone.localtime(timezone.now()).strftime("%Y-%m-%d %I:%M:%S %p").encode("ascii")
     lines.append(ESC + b"\x61" + b"\x00") 
     lines.append(b"Date  : " + now + b"\n")
@@ -3241,13 +3246,12 @@ def build_dynamic_token_bytes(session, items_with_delta, header_label, token_num
         lines.append(b"Waiter: " + w_name + b"\n")
     lines.append(b"-" * 32 + b"\n")
 
-    # -- Items List --
+    # 5. Items
     lines.append(b"#  Item                 Qty\n")
     lines.append(b"-" * 32 + b"\n")
 
     for idx, (ti, delta) in enumerate(items_with_delta, start=1):
         if ti.source_type == 'menu':
-            # Fetch fresh object name
             from .models import MenuItem
             try:
                 obj = MenuItem.objects.get(pk=ti.source_id)
@@ -3262,7 +3266,6 @@ def build_dynamic_token_bytes(session, items_with_delta, header_label, token_num
             except Deal.DoesNotExist:
                 name = "Unknown Deal"
         
-        # Formatting: Index (2 chars) + Name (18 chars) + Qty (3 chars)
         name = name[:18]
         idx_b = str(idx).rjust(2).encode()
         name_b = name.ljust(18).encode("ascii", "ignore")
@@ -3271,7 +3274,6 @@ def build_dynamic_token_bytes(session, items_with_delta, header_label, token_num
         lines.append(idx_b + b"  " + name_b + b"  " + qty_b + b"\n")
 
     lines.append(b"\n\n\n\n\n")
-    # -- Cut Paper --
     lines.append(b"\n" * 4)
     lines.append(GS + b"\x56" + b"\x00") 
 
