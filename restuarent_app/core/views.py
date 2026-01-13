@@ -825,7 +825,11 @@ class OrderCreateView(LoginRequiredMixin, View):
 
                         from .views import build_token_bytes_for_items
                         token_data = build_token_bytes_for_items(order, group_items, header_label)
-                        send_to_printer(token_data, printer_name=target_printer)
+                        # Skip printing if printer name is "no print" or empty
+                        if target_printer and target_printer.strip().lower() not in ['no print', 'noprint', '']:
+                            send_to_printer(token_data, printer_name=target_printer)
+                        else:
+                            print(f"Skipping print for {header_label} - printer set to 'no print'")
 
                     item_ids = [i.id for i in new_items]
                     OrderItem.objects.filter(id__in=item_ids).update(token_printed=True)
@@ -3193,11 +3197,15 @@ class TablePrintTokenView(View):
                 token_num
             )
             
-            print(f"Printing {header_label} to {target_printer}")
-            try:
-                send_to_printer(payload, printer_name=target_printer)
-            except Exception as e:
-                print(f"Printer Error for {header_label}: {e}")
+            # Skip printing if printer name is "no print" or empty
+            if target_printer and target_printer.strip().lower() not in ['no print', 'noprint', '']:
+                print(f"Printing {header_label} to {target_printer}")
+                try:
+                    send_to_printer(payload, printer_name=target_printer)
+                except Exception as e:
+                    print(f"Printer Error for {header_label}: {e}")
+            else:
+                print(f"Skipping print for {header_label} - printer set to 'no print'")
 
         # 5. Update printed quantities
         for ti, d in items_with_delta:
